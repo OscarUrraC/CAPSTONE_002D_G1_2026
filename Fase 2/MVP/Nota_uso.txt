@@ -1,0 +1,2 @@
+El MVP no se puede utilizar sin claves privadas de Supabase que no se permite subir a Github, así que debe ser probado en clase por 
+nuestro grupo. Por ahora, el código está aquí subido.
