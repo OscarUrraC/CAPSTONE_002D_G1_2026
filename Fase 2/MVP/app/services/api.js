@@ -63,3 +63,187 @@ export async function subirFotoPerfil(token, imagenUri) {
   }
   return data;
 }
+
+// Helper para los endpoints de grupos y reportes: agrega el token, serializa el body
+// y lanza Error con el mensaje del backend, igual que las funciones de arriba.
+async function peticion(token, ruta, { method = "GET", body, mensajeError }) {
+  const respuesta = await fetch(`${API_URL}${ruta}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body !== undefined && { "Content-Type": "application/json" }),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await respuesta.json();
+  if (!respuesta.ok) {
+    throw new Error(data.error ?? mensajeError);
+  }
+  return data;
+}
+
+// ---------- Grupos ----------
+
+// GET /grupos?categoria=&q=
+export function listarGrupos(token, { categoria, q } = {}) {
+  const params = new URLSearchParams();
+  if (categoria) params.append("categoria", categoria);
+  if (q?.trim()) params.append("q", q.trim());
+  const query = params.toString() ? `?${params}` : "";
+  return peticion(token, `/grupos${query}`, { mensajeError: "Error al obtener los grupos" });
+}
+
+// POST /grupos { nombre, descripcion, categoria, ingreso_limitado }
+export function crearGrupo(token, datos) {
+  return peticion(token, "/grupos", { method: "POST", body: datos, mensajeError: "Error al crear el grupo" });
+}
+
+export function obtenerGrupo(token, idGrupo) {
+  return peticion(token, `/grupos/${idGrupo}`, { mensajeError: "Error al obtener el grupo" });
+}
+
+// PATCH /grupos/:id { nombre, descripcion }
+export function editarGrupo(token, idGrupo, cambios) {
+  return peticion(token, `/grupos/${idGrupo}`, { method: "PATCH", body: cambios, mensajeError: "Error al editar el grupo" });
+}
+
+export function unirseAGrupo(token, idGrupo) {
+  return peticion(token, `/grupos/${idGrupo}/unirse`, { method: "POST", mensajeError: "Error al unirse al grupo" });
+}
+
+// También cancela una solicitud pendiente.
+export function salirDeGrupo(token, idGrupo) {
+  return peticion(token, `/grupos/${idGrupo}/membresia`, { method: "DELETE", mensajeError: "Error al salir del grupo" });
+}
+
+// ---------- Miembros ----------
+
+export function listarMiembros(token, idGrupo) {
+  return peticion(token, `/grupos/${idGrupo}/miembros`, { mensajeError: "Error al obtener los miembros" });
+}
+
+// estado: "activo" (aprobar solicitud) | "expulsado"
+export function cambiarEstadoMiembro(token, idGrupo, idPerfil, estado) {
+  return peticion(token, `/grupos/${idGrupo}/miembros/${idPerfil}`, {
+    method: "PATCH",
+    body: { estado },
+    mensajeError: "Error al actualizar el miembro",
+  });
+}
+
+export function rechazarSolicitud(token, idGrupo, idPerfil) {
+  return peticion(token, `/grupos/${idGrupo}/miembros/${idPerfil}`, {
+    method: "DELETE",
+    mensajeError: "Error al rechazar la solicitud",
+  });
+}
+
+// Solo el moderador: el backend responde 403 a cualquier otro.
+export function cambiarRango(token, idGrupo, idPerfil, esColaborador) {
+  return peticion(token, `/grupos/${idGrupo}/miembros/${idPerfil}/rango`, {
+    method: "PATCH",
+    body: { es_colaborador: esColaborador },
+    mensajeError: "Error al cambiar el rango",
+  });
+}
+
+// ---------- Publicaciones ----------
+
+export function listarPublicaciones(token, idGrupo) {
+  return peticion(token, `/grupos/${idGrupo}/publicaciones`, { mensajeError: "Error al obtener las publicaciones" });
+}
+
+export function crearPublicacion(token, idGrupo, contenido) {
+  return peticion(token, `/grupos/${idGrupo}/publicaciones`, {
+    method: "POST",
+    body: { contenido },
+    mensajeError: "Error al publicar",
+  });
+}
+
+export function eliminarPublicacion(token, idGrupo, idPublicacion) {
+  return peticion(token, `/grupos/${idGrupo}/publicaciones/${idPublicacion}`, {
+    method: "DELETE",
+    mensajeError: "Error al eliminar la publicación",
+  });
+}
+
+// ---------- Reportes ----------
+
+export function listarMotivosReporte(token) {
+  return peticion(token, "/reportes/motivos", { mensajeError: "Error al obtener los motivos" });
+}
+
+// reporte: { id_publicacion | id_grupo, id_motivo_reporte, detalle }
+export function crearReporte(token, reporte) {
+  return peticion(token, "/reportes", { method: "POST", body: reporte, mensajeError: "Error al enviar el reporte" });
+}
+// ---------- Feed, me gusta y comentarios (módulo Feeds) ----------
+
+// GET /feed/para-ti?limite=&antes=  ->  { publicaciones, siguiente, sin_grupos }
+// `antes` es el `siguiente` de la respuesta anterior (cursor). URLSearchParams codifica el "+"
+// de la zona horaria (si no, el servidor lo leería como espacio y rechazaría la fecha).
+export function obtenerFeedParaTi(token, { antes, limite } = {}) {
+  const params = new URLSearchParams();
+  if (antes) params.append("antes", antes);
+  if (limite) params.append("limite", String(limite));
+  const query = params.toString() ? `?${params}` : "";
+  return peticion(token, `/feed/para-ti${query}`, { mensajeError: "Error al obtener tu feed" });
+}
+
+export function obtenerPublicacion(token, idPublicacion) {
+  return peticion(token, `/publicaciones/${idPublicacion}`, { mensajeError: "Error al obtener la publicación" });
+}
+
+// Ambas responden { me_gusta_mio, cantidad_me_gusta } con el valor real del servidor.
+export function darMeGustaPublicacion(token, idPublicacion) {
+  return peticion(token, `/publicaciones/${idPublicacion}/me-gusta`, {
+    method: "POST",
+    mensajeError: "No se pudo dar me gusta",
+  });
+}
+
+export function quitarMeGustaPublicacion(token, idPublicacion) {
+  return peticion(token, `/publicaciones/${idPublicacion}/me-gusta`, {
+    method: "DELETE",
+    mensajeError: "No se pudo quitar el me gusta",
+  });
+}
+
+// -> { comentarios: [{ ...comentario, respuestas: [...] }], total }
+export function listarComentarios(token, idPublicacion) {
+  return peticion(token, `/publicaciones/${idPublicacion}/comentarios`, {
+    mensajeError: "Error al obtener los comentarios",
+  });
+}
+
+// idComentarioPadre opcional: con él, el comentario es una respuesta.
+export function crearComentario(token, idPublicacion, contenido, idComentarioPadre) {
+  return peticion(token, `/publicaciones/${idPublicacion}/comentarios`, {
+    method: "POST",
+    body: { contenido, ...(idComentarioPadre && { id_comentario_padre: idComentarioPadre }) },
+    mensajeError: "No se pudo publicar el comentario",
+  });
+}
+
+export function darMeGustaComentario(token, idComentario) {
+  return peticion(token, `/comentarios/${idComentario}/me-gusta`, {
+    method: "POST",
+    mensajeError: "No se pudo dar me gusta",
+  });
+}
+
+export function quitarMeGustaComentario(token, idComentario) {
+  return peticion(token, `/comentarios/${idComentario}/me-gusta`, {
+    method: "DELETE",
+    mensajeError: "No se pudo quitar el me gusta",
+  });
+}
+
+export function eliminarComentario(token, idComentario) {
+  return peticion(token, `/comentarios/${idComentario}`, {
+    method: "DELETE",
+    mensajeError: "No se pudo eliminar el comentario",
+  });
+}
