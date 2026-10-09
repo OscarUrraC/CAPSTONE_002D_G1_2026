@@ -454,7 +454,9 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, async 
 });
 
 // DELETE /grupos/:id/publicaciones/:idPublicacion — borrado suave (estado = 'eliminada').
-// Puede hacerlo el autor, o el moderador / un colaborador.
+// Puede hacerlo el autor, o el moderador / un colaborador. Guarda quién, cuándo y motivo
+// (automático si es el propio autor, opcional si lo hace un moderador/colaborador), como exige
+// la trazabilidad de MO-0001-0006.
 gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCuentaActiva, async (req, res) => {
   try {
     const { grupo, rol } = await obtenerContextoGrupo(req.params.id, req.usuario.id_perfil);
@@ -475,12 +477,29 @@ gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCue
       throw errorConStatus("Solo el autor, el moderador o un colaborador puede eliminar esta publicación", 403);
     }
 
-    const { error: errorUpdate } = await supabaseAdmin
+    const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim() : "";
+    if (motivo.length > 200) {
+      throw errorConStatus("motivo admite hasta 200 caracteres", 400);
+    }
+    // Si elimina el propio autor, el motivo es siempre el mismo (no se le pide ni se le deja editar).
+    // Si elimina un moderador/colaborador, el motivo que haya escrito es opcional.
+    const motivoFinal = esAutor ? "Eliminado por el usuario" : motivo === "" ? null : motivo;
+
+    const { data: actualizada, error: errorUpdate } = await supabaseAdmin
       .from("publicacion")
-      .update({ estado: "eliminada" })
-      .eq("id_publicacion", publicacion.id_publicacion);
+      .update({
+        estado: "eliminada",
+        eliminado_por: req.usuario.id_perfil,
+        eliminado_en: new Date().toISOString(),
+        motivo_eliminacion: motivoFinal,
+      })
+      .eq("id_publicacion", publicacion.id_publicacion)
+      .eq("estado", "activa") // si dos personas la eliminan a la vez, solo la primera queda registrada
+      .select("id_publicacion")
+      .maybeSingle();
 
     if (errorUpdate) throw errorConStatus("No se pudo eliminar la publicación", 500);
+    if (!actualizada) throw errorConStatus("Publicación no encontrada", 404);
 
     res.json({ ok: true });
   } catch (error) {

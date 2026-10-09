@@ -1,1 +1,0 @@
-export const API_URL = "http://10.175.72.210:3000";

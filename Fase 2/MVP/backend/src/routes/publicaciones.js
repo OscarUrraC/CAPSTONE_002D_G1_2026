@@ -153,7 +153,7 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
       throw errorConStatus("Solo los miembros activos del grupo pueden comentar", 403);
     }
 
-    const contenido = validarContenido(req.body.contenido);
+    let contenido = validarContenido(req.body.contenido);
     const { id_comentario_padre } = req.body;
 
     let padre = null;
@@ -164,7 +164,7 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
 
       const { data, error } = await supabaseAdmin
         .from("comentario")
-        .select("id_comentario, id_comentario_raiz")
+        .select(`id_comentario, id_comentario_padre, id_comentario_raiz, autor:id_perfil_autor(${SELECT_AUTOR})`)
         .eq("id_comentario", id_comentario_padre)
         .eq("id_publicacion", publicacion.id_publicacion) // debe ser de ESTA publicación
         .eq("estado", "activo") // no se responde a algo eliminado
@@ -178,17 +178,29 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
       idRaiz = data.id_comentario_raiz ?? data.id_comentario;
     }
 
-    const { data: creado, error } = await supabaseAdmin
-      .from("comentario")
-      .insert({
-        id_publicacion: publicacion.id_publicacion,
-        id_perfil_autor: req.usuario.id_perfil,
-        contenido,
-        id_comentario_padre: padre?.id_comentario ?? null,
-        id_comentario_raiz: idRaiz,
-      })
-      .select(SELECT_COMENTARIO)
-      .single();
+    const insertar = (idComentarioPadre) =>
+      supabaseAdmin
+        .from("comentario")
+        .insert({
+          id_publicacion: publicacion.id_publicacion,
+          id_perfil_autor: req.usuario.id_perfil,
+          contenido,
+          id_comentario_padre: idComentarioPadre,
+          id_comentario_raiz: idRaiz,
+        })
+        .select(SELECT_COMENTARIO)
+        .single();
+
+    let { data: creado, error } = await insertar(padre?.id_comentario ?? null);
+
+    // El trigger fn_validar_hilo_comentario rechaza (P0001) responder directo a un nivel 3.
+    // En ese caso, la respuesta se adjunta al nivel 2 (el padre del padre) con mención al autor original.
+    if (error?.code === "P0001" && padre?.id_comentario_padre) {
+      const nombreOriginal =
+        padre.autor.mostrar_apodo && padre.autor.apodo ? padre.autor.apodo : padre.autor.nombres;
+      contenido = `@${nombreOriginal} ${contenido}`;
+      ({ data: creado, error } = await insertar(padre.id_comentario_padre));
+    }
 
     if (error || !creado) throw errorConStatus("No se pudo publicar el comentario", 500);
 

@@ -1,0 +1,1 @@
+export const API_URL = "http://ip de la maquina:3000";

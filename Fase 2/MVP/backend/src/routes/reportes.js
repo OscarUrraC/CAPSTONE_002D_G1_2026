@@ -13,7 +13,7 @@ function responderError(res, error) {
 }
 
 // Valida que el usuario pueda ver lo que reporta y que no sea suyo.
-async function validarObjetivo({ id_publicacion, id_grupo }, idPerfil) {
+async function validarObjetivo({ id_publicacion, id_grupo, id_comentario }, idPerfil) {
   if (id_publicacion) {
     const { data: publicacion, error } = await supabaseAdmin
       .from("publicacion")
@@ -30,6 +30,24 @@ async function validarObjetivo({ id_publicacion, id_grupo }, idPerfil) {
 
     const { grupo, rol } = await obtenerContextoGrupo(publicacion.id_grupo, idPerfil);
     if (!puedeVerPosts(grupo, rol)) throw errorConStatus("Publicación no encontrada", 404);
+    return;
+  }
+
+  if (id_comentario) {
+    const { data: comentario, error } = await supabaseAdmin
+      .from("comentario")
+      .select("id_comentario, id_perfil_autor, publicacion:id_publicacion(id_grupo)")
+      .eq("id_comentario", id_comentario)
+      .eq("estado", "activo")
+      .maybeSingle();
+
+    if (error || !comentario) throw errorConStatus("Comentario no encontrado", 404);
+    if (comentario.id_perfil_autor === idPerfil) {
+      throw errorConStatus("No puedes reportar tu propio comentario", 400);
+    }
+
+    const { grupo, rol } = await obtenerContextoGrupo(comentario.publicacion.id_grupo, idPerfil);
+    if (!puedeVerPosts(grupo, rol)) throw errorConStatus("Comentario no encontrado", 404);
     return;
   }
 
@@ -57,10 +75,11 @@ reportesRouter.get("/motivos", requireAuth, async (req, res) => {
 // Queda en estado 'pendiente' (default de la tabla) hasta que un administrador lo resuelva.
 reportesRouter.post("/", requireAuth, requireCuentaActiva, async (req, res) => {
   try {
-    const { id_publicacion, id_grupo, id_motivo_reporte, detalle } = req.body;
+    const { id_publicacion, id_grupo, id_comentario, id_motivo_reporte, detalle } = req.body;
 
-    if (Boolean(id_publicacion) === Boolean(id_grupo)) {
-      throw errorConStatus("Indica exactamente uno: id_publicacion o id_grupo", 400);
+    const objetivos = [id_publicacion, id_grupo, id_comentario].filter(Boolean);
+    if (objetivos.length !== 1) {
+      throw errorConStatus("Indica exactamente uno: id_publicacion, id_grupo o id_comentario", 400);
     }
     if (typeof id_motivo_reporte !== "string" || !id_motivo_reporte) {
       throw errorConStatus("Falta id_motivo_reporte", 400);
@@ -74,7 +93,7 @@ reportesRouter.post("/", requireAuth, requireCuentaActiva, async (req, res) => {
     }
 
     const idPerfil = req.usuario.id_perfil;
-    await validarObjetivo({ id_publicacion, id_grupo }, idPerfil);
+    await validarObjetivo({ id_publicacion, id_grupo, id_comentario }, idPerfil);
 
     const { data, error } = await supabaseAdmin
       .from("reporte")
@@ -82,15 +101,14 @@ reportesRouter.post("/", requireAuth, requireCuentaActiva, async (req, res) => {
         id_perfil_denunciante: idPerfil,
         id_publicacion: id_publicacion ?? null,
         id_grupo: id_grupo ?? null,
+        id_comentario: id_comentario ?? null,
         id_motivo_reporte,
         detalle: detalleLimpio === "" ? null : detalleLimpio,
       })
       .select("id_reporte, estado, creado_en")
       .single();
 
-    // 23505 = índice único parcial: ya hay un reporte pendiente de este usuario sobre lo mismo
     if (error?.code === "23505") throw errorConStatus("Ya reportaste esto", 409);
-    // 23503 = FK inexistente; 22P02 = uuid mal formado
     if (error?.code === "23503" || error?.code === "22P02") {
       throw errorConStatus("Motivo de reporte inválido", 400);
     }
