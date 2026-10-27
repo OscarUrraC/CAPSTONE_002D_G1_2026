@@ -1,11 +1,11 @@
 import { View, ActivityIndicator } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import LoginScreen from "./screens/LoginScreen";
+import AuthStack from "./navigation/AuthStack";
 import RootTabs from "./navigation/RootTabs";
 
 function Contenido() {
-  const { token, perfil, verificandoSesion, iniciarSesion } = useAuth();
+  const { token, perfil, verificandoSesion } = useAuth();
 
   if (verificandoSesion) {
     return (
@@ -16,7 +16,7 @@ function Contenido() {
   }
 
   if (!token || !perfil) {
-    return <LoginScreen onLogin={iniciarSesion} />;
+    return <AuthStack />;
   }
 
   return <RootTabs />;

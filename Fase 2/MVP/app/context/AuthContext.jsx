@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { obtenerPerfil } from "../services/api";
+import { guardarCuenta } from "../services/cuentas";
 
 const CLAVE_TOKEN = "connectboard_token";
 const AuthContext = createContext(null);
@@ -27,13 +28,32 @@ export function AuthProvider({ children }) {
     restaurarSesion();
   }, []);
 
-  async function iniciarSesion(nuevoToken, nuevoPerfil) {
+  async function iniciarSesion(nuevoToken, perfilParcial) {
     await SecureStore.setItemAsync(CLAVE_TOKEN, nuevoToken);
+
+    // El perfil que devuelve el login trae menos campos que GET /perfil/me
+    // (sin carrera, semestre ni foto): se pide el completo para que ProfileScreen no quede a medias.
+    let perfilCompleto = perfilParcial;
+    try {
+      perfilCompleto = await obtenerPerfil(nuevoToken);
+    } catch {
+      // si falla, se sigue con el parcial: la sesión es válida igual
+    }
+
+    // Solo en desarrollo (el módulo ignora la llamada en producción).
+    // Un fallo aquí no debe impedir el login.
+    try {
+      await guardarCuenta(nuevoToken, { ...perfilParcial, ...perfilCompleto });
+    } catch {
+      // el selector de cuentas es solo una comodidad de desarrollo
+    }
+
     setToken(nuevoToken);
-    setPerfil(nuevoPerfil);
+    setPerfil(perfilCompleto);
   }
 
   async function cerrarSesion() {
+    // Borra solo el token activo; las cuentas guardadas para cambio rápido se conservan.
     await SecureStore.deleteItemAsync(CLAVE_TOKEN);
     setToken(null);
     setPerfil(null);

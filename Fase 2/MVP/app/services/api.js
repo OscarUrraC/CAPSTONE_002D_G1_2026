@@ -1,20 +1,6 @@
 import { API_URL } from "../config";
 import { File } from "expo-file-system/next";
 
-export async function loginDemo(cuenta) {
-  const respuesta = await fetch(`${API_URL}/auth/demo-login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cuenta }),
-  });
-
-  const data = await respuesta.json();
-  if (!respuesta.ok) {
-    throw new Error(data.error ?? "Error al iniciar sesión");
-  }
-  return data; // { token, perfil }
-}
-
 export async function obtenerPerfil(token) {
   const respuesta = await fetch(`${API_URL}/perfil/me`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -179,6 +165,7 @@ export function listarMotivosReporte(token) {
 export function crearReporte(token, reporte) {
   return peticion(token, "/reportes", { method: "POST", body: reporte, mensajeError: "Error al enviar el reporte" });
 }
+
 // ---------- Feed, me gusta y comentarios (módulo Feeds) ----------
 
 // GET /feed/para-ti?limite=&antes=  ->  { publicaciones, siguiente, sin_grupos }
@@ -246,4 +233,46 @@ export function eliminarComentario(token, idComentario) {
     method: "DELETE",
     mensajeError: "No se pudo eliminar el comentario",
   });
+}
+
+// ---------- Registro y login real ----------
+
+async function postJson(ruta, cuerpo, mensajePorDefecto) {
+  let respuesta;
+  try {
+    respuesta = await fetch(`${API_URL}${ruta}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cuerpo),
+    });
+  } catch {
+    // fetch solo lanza excepción cuando no hay conexión con el servidor
+    throw new Error("No se pudo conectar con el servidor. Revisa tu conexión y la IP en config.js");
+  }
+  const data = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(data.error ?? mensajePorDefecto);
+  return data;
+}
+
+// POST /auth/registro -> { token, perfil }
+export function registrar(datos) {
+  return postJson("/auth/registro", datos, "No se pudo crear la cuenta");
+}
+
+// POST /auth/login -> { token, perfil }
+export function login(correo, password) {
+  return postJson("/auth/login", { correo, password }, "No se pudo iniciar sesión");
+}
+
+// GET /auth/carreras (público: se usa antes de tener sesión)
+export async function obtenerCarreras() {
+  let respuesta;
+  try {
+    respuesta = await fetch(`${API_URL}/auth/carreras`);
+  } catch {
+    throw new Error("No se pudo conectar con el servidor");
+  }
+  const data = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(data.error ?? "No se pudieron cargar las carreras");
+  return data;
 }
