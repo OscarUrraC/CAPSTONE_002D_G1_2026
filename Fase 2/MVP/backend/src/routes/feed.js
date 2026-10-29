@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireCuentaActiva, requireRol } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import {
   SELECT_PUBLICACION_FEED,
   enriquecerPublicaciones,
   responderError,
+  validarContenido,
 } from "../services/feedService.js";
 import { errorConStatus } from "../services/grupoService.js";
 
@@ -75,3 +76,75 @@ feedRouter.get("/para-ti", requireAuth, async (req, res) => {
     responderError(res, error);
   }
 });
+
+// GET /feed/anuncios?limite=20&antes=<creado_en del último anuncio recibido>
+//
+// Anuncios institucionales (tipo='anuncio'), visibles para todos los usuarios. Misma paginación por
+// cursor que "Para Ti". No depende de grupos, así que no hay `sin_grupos`.
+feedRouter.get("/anuncios", requireAuth, async (req, res) => {
+  try {
+    const limite = Math.min(
+      Math.max(parseInt(req.query.limite, 10) || LIMITE_POR_DEFECTO, 1),
+      LIMITE_MAXIMO
+    );
+
+    const { antes } = req.query;
+    if (antes !== undefined && (typeof antes !== "string" || Number.isNaN(Date.parse(antes)))) {
+      throw errorConStatus("antes debe ser una fecha válida (el creado_en del último anuncio)", 400);
+    }
+
+    let consulta = supabaseAdmin
+      .from("publicacion")
+      .select(SELECT_PUBLICACION_FEED)
+      .eq("tipo", "anuncio")
+      .eq("estado", "activa")
+      .order("creado_en", { ascending: false })
+      .limit(limite);
+
+    if (antes) consulta = consulta.lt("creado_en", antes);
+
+    const { data, error } = await consulta;
+    if (error) {
+      console.error("feed anuncios:", error);
+      throw errorConStatus("No se pudieron obtener los anuncios", 500);
+    }
+
+    const publicaciones = await enriquecerPublicaciones(data, req.usuario.id_perfil);
+    const siguiente = data.length === limite ? data[data.length - 1].creado_en : null;
+
+    res.json({ publicaciones, siguiente });
+  } catch (error) {
+    responderError(res, error);
+  }
+});
+
+// POST /feed/anuncios { contenido }  — solo administradores.
+// id_sede lo completa el trigger trg_publicacion_anuncio_heredar_sede; id_grupo queda nulo.
+// El rol se lee del JWT: si le quitan el rol a un administrador, su token sigue valiendo hasta que expire.
+feedRouter.post(
+  "/anuncios",
+  requireAuth,
+  requireCuentaActiva,
+  requireRol("administrador"),
+  async (req, res) => {
+    try {
+      const contenido = validarContenido(req.body.contenido);
+
+      const { data, error } = await supabaseAdmin
+        .from("publicacion")
+        .insert({ id_perfil_autor: req.usuario.id_perfil, tipo: "anuncio", contenido })
+        .select(SELECT_PUBLICACION_FEED)
+        .single();
+
+      if (error || !data) {
+        console.error("crear anuncio:", error);
+        throw errorConStatus("No se pudo publicar el anuncio", 500);
+      }
+
+      const [anuncio] = await enriquecerPublicaciones([data], req.usuario.id_perfil);
+      res.status(201).json(anuncio);
+    } catch (error) {
+      responderError(res, error);
+    }
+  }
+);

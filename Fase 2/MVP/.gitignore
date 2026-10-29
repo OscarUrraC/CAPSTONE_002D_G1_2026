@@ -16,3 +16,11 @@ backend/npm-debug.log*
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Otras variantes de .env (el ejemplo sí se versiona)
+.env.*
+!.env.example
+
+# Credenciales de Firebase/FCM para el push (el repositorio es publico)
+google-services.json
+*-firebase-adminsdk-*.json

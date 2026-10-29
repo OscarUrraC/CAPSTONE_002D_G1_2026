@@ -1,5 +1,5 @@
 import { API_URL } from "../config";
-import { File } from "expo-file-system/next";
+import { File } from "expo-file-system";
 
 export async function obtenerPerfil(token) {
   const respuesta = await fetch(`${API_URL}/perfil/me`, {
@@ -53,16 +53,26 @@ export async function subirFotoPerfil(token, imagenUri) {
 // Helper para los endpoints de grupos y reportes: agrega el token, serializa el body
 // y lanza Error con el mensaje del backend, igual que las funciones de arriba.
 async function peticion(token, ruta, { method = "GET", body, mensajeError }) {
-  const respuesta = await fetch(`${API_URL}${ruta}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body !== undefined && { "Content-Type": "application/json" }),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let respuesta;
+  try {
+    respuesta = await fetch(`${API_URL}${ruta}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined && { "Content-Type": "application/json" }),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error("No se pudo conectar con el servidor. Revisa tu conexión y la IP en config.js");
+  }
 
-  const data = await respuesta.json();
+  // Si el servidor responde algo que no es JSON (por ejemplo la página "Cannot GET ..." de Express
+  // cuando la ruta no existe o el backend no se reinició), se avisa con un mensaje claro.
+  const data = await respuesta.json().catch(() => null);
+  if (data === null) {
+    throw new Error(`El servidor respondió algo inesperado (HTTP ${respuesta.status}) en ${ruta}. ¿Reiniciaste el backend?`);
+  }
   if (!respuesta.ok) {
     throw new Error(data.error ?? mensajeError);
   }
@@ -235,6 +245,26 @@ export function eliminarComentario(token, idComentario) {
   });
 }
 
+// ---------- Anuncios ----------
+
+// GET /feed/anuncios?limite=&antes=  ->  { publicaciones, siguiente }
+export function obtenerFeedAnuncios(token, { antes, limite } = {}) {
+  const params = new URLSearchParams();
+  if (antes) params.append("antes", antes);
+  if (limite) params.append("limite", String(limite));
+  const query = params.toString() ? `?${params}` : "";
+  return peticion(token, `/feed/anuncios${query}`, { mensajeError: "Error al obtener los anuncios" });
+}
+
+// Solo administradores: el backend responde 403 a cualquier otro.
+export function crearAnuncio(token, contenido) {
+  return peticion(token, "/feed/anuncios", {
+    method: "POST",
+    body: { contenido },
+    mensajeError: "No se pudo publicar el anuncio",
+  });
+}
+
 // ---------- Registro y login real ----------
 
 async function postJson(ruta, cuerpo, mensajePorDefecto) {
@@ -275,4 +305,94 @@ export async function obtenerCarreras() {
   const data = await respuesta.json().catch(() => ({}));
   if (!respuesta.ok) throw new Error(data.error ?? "No se pudieron cargar las carreras");
   return data;
+}
+
+// ---------- Eventos ----------
+
+// -> { eventos: [{ id_evento, titulo, descripcion, ubicacion, fecha_evento, estado, marcado, ... }] }
+export function listarEventos(token) {
+  return peticion(token, "/eventos", { mensajeError: "Error al obtener los eventos" });
+}
+
+// -> { ...evento, marcado, puede_gestionar }
+export function obtenerEvento(token, idEvento) {
+  return peticion(token, `/eventos/${idEvento}`, { mensajeError: "Error al obtener el evento" });
+}
+
+// Solo administradores. datos: { titulo, descripcion?, ubicacion?, fecha_evento (ISO) }
+export function crearEvento(token, datos) {
+  return peticion(token, "/eventos", { method: "POST", body: datos, mensajeError: "No se pudo publicar el evento" });
+}
+
+// Solo administradores. Si cambia fecha_evento, el evento queda reprogramado.
+export function editarEvento(token, idEvento, cambios) {
+  return peticion(token, `/eventos/${idEvento}`, { method: "PATCH", body: cambios, mensajeError: "No se pudo editar el evento" });
+}
+
+// Solo administradores.
+export function cancelarEvento(token, idEvento, motivo) {
+  return peticion(token, `/eventos/${idEvento}/cancelar`, {
+    method: "POST",
+    body: { motivo },
+    mensajeError: "No se pudo cancelar el evento",
+  });
+}
+
+// -> { marcado: true | false }
+export function marcarEvento(token, idEvento) {
+  return peticion(token, `/eventos/${idEvento}/marca`, { method: "PUT", mensajeError: "No se pudo marcar el evento" });
+}
+
+export function desmarcarEvento(token, idEvento) {
+  return peticion(token, `/eventos/${idEvento}/marca`, { method: "DELETE", mensajeError: "No se pudo desmarcar el evento" });
+}
+
+// ---------- Notificaciones (bandeja dentro de la app) ----------
+
+// -> { notificaciones: [{ id_notificacion, tipo, titulo, cuerpo, id_evento, creado_en, leida_en }], siguiente, no_leidas }
+export function listarNotificaciones(token, { antes, limite } = {}) {
+  const params = new URLSearchParams();
+  if (antes) params.append("antes", antes);
+  if (limite) params.append("limite", String(limite));
+  const query = params.toString() ? `?${params}` : "";
+  return peticion(token, `/notificaciones${query}`, { mensajeError: "Error al obtener las notificaciones" });
+}
+
+// -> { no_leidas }
+export function contarNotificacionesNoLeidas(token) {
+  return peticion(token, "/notificaciones/no-leidas", { mensajeError: "Error al contar las notificaciones" });
+}
+
+// -> { no_leidas }
+export function marcarNotificacionLeida(token, idNotificacion) {
+  return peticion(token, `/notificaciones/${idNotificacion}/leer`, {
+    method: "POST",
+    mensajeError: "No se pudo marcar la notificación como leída",
+  });
+}
+
+// -> { no_leidas: 0 }
+export function marcarTodasLeidas(token) {
+  return peticion(token, "/notificaciones/leer-todas", {
+    method: "POST",
+    mensajeError: "No se pudieron marcar las notificaciones como leídas",
+  });
+}
+
+// ---------- Dispositivos (push) ----------
+
+export function registrarDispositivo(token, pushToken, plataforma) {
+  return peticion(token, "/dispositivos", {
+    method: "POST",
+    body: { push_token: pushToken, plataforma },
+    mensajeError: "No se pudo registrar el dispositivo",
+  });
+}
+
+export function eliminarDispositivo(token, pushToken) {
+  return peticion(token, "/dispositivos", {
+    method: "DELETE",
+    body: { push_token: pushToken },
+    mensajeError: "No se pudo eliminar el dispositivo",
+  });
 }
