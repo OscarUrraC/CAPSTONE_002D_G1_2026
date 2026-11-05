@@ -50,6 +50,7 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [error, setError] = useState(null);
   const [procesando, setProcesando] = useState(false);
   const [contenido, setContenido] = useState("");
+  const [imagenes, setImagenes] = useState([]);
   const [publicando, setPublicando] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [editando, setEditando] = useState(false);
@@ -113,13 +114,31 @@ export default function GroupDetailScreen({ route, navigation }) {
     ]);
   }
 
+    async function elegirImagenes() {
+    const disponibles = 4 - imagenes.length;
+    if (disponibles <= 0) return;
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: disponibles,
+      quality: 0.8, // recomprime a JPEG: baja el peso y evita problemas con HEIC
+    });
+    if (resultado.canceled) return;
+    setImagenes((actuales) => [...actuales, ...resultado.assets.map((a) => a.uri)].slice(0, 4));
+  }
+
+  function quitarImagen(uri) {
+    setImagenes((actuales) => actuales.filter((u) => u !== uri));
+  }
+
   async function publicar() {
     setPublicando(true);
     setError(null);
     try {
-      const nueva = await crearPublicacion(token, idGrupo, contenido);
+      const nueva = await crearPublicacion(token, idGrupo, contenido, imagenes);
       setPublicaciones((actuales) => [nueva, ...actuales]);
       setContenido("");
+      setImagenes([]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -255,8 +274,31 @@ export default function GroupDetailScreen({ route, navigation }) {
                   multiline
                   maxLength={1000}
                 />
+                {imagenes.length > 0 && (
+                  <ScrollView horizontal contentContainerStyle={estilos.filaMiniaturas}>
+                    {imagenes.map((uri) => (
+                      <View key={uri}>
+                        <Image source={{ uri }} style={estilos.miniatura} />
+                        <Pressable
+                          style={estilos.quitarMiniatura}
+                          onPress={() => quitarImagen(uri)}
+                          hitSlop={8}
+                        >
+                          <Text style={estilos.textoQuitar}>✕</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
                 <View style={estilos.filaPublicar}>
                   <Text style={estilos.contador}>{contenido.length}/1000</Text>
+                  <Pressable
+                    style={[estilos.botonImagen, (imagenes.length >= 4 || publicando) && estilos.botonDeshabilitado]}
+                    onPress={elegirImagenes}
+                    disabled={imagenes.length >= 4 || publicando}
+                  >
+                    <Text style={estilos.textoBotonSecundario}>Imagen ({imagenes.length}/4)</Text>
+                  </Pressable>
                   {publicando ? (
                     <ActivityIndicator />
                   ) : (
@@ -360,6 +402,8 @@ function TarjetaPublicacion({ publicacion, onOpciones, onAbrir, interactivo }) {
       <Pressable onPress={onAbrir}>
         <Text style={estilos.contenido}>{publicacion.contenido}</Text>
       </Pressable>
+
+      <ImagenesPublicacion imagenes={publicacion.imagenes} />
       {/* Módulo Feeds: me gusta y comentarios (solo lectura si no soy miembro del grupo). */}
       <AccionesPublicacion
         publicacion={publicacion}

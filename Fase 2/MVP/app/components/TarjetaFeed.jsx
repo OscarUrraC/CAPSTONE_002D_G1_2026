@@ -1,6 +1,7 @@
 import { View, Text, Image, Pressable, StyleSheet } from "react-native";
 import AccionesPublicacion from "./AccionesPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
+import ImagenesPublicacion from "/ImagenesPublicaciones";
 
 // Publicación dentro del feed Para Ti: muestra de qué grupo viene (el feed mezcla varios).
 // onAbrir: abre la pantalla de comentarios. onAbrirGrupo: abre el detalle del grupo.
@@ -31,6 +32,7 @@ export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo }) {
         <Text style={estilos.contenido}>{publicacion.contenido}</Text>
       </Pressable>
 
+      <ImagenesPublicacion imagenes={publicacion.imagenes} />
       {/* Dentro del feed siempre soy miembro del grupo, por eso es interactivo. */}
       <AccionesPublicacion publicacion={publicacion} interactivo onAbrirComentarios={onAbrir} />
     </View>

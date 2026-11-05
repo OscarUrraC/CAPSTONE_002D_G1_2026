@@ -24,6 +24,8 @@ import {
 import AccionesPublicacion from "../components/AccionesPublicacion";
 import { emitirPublicacion } from "../utils/eventosPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
+import ImagenesPublicacion from "../ImagenesPublicaciones/";
+
 
 // Pantalla de una publicación: el post, sus comentarios (con respuestas) y la caja para comentar.
 // Se abre desde el feed Para Ti y desde el detalle de un grupo (ruta "DetallePublicacion").
@@ -223,6 +225,7 @@ function CabeceraPublicacion({ publicacion }) {
       {publicacion.grupo && <Text style={estilos.grupo}>en {publicacion.grupo.nombre}</Text>}
       <Autor autor={publicacion.autor} fecha={publicacion.creado_en} />
       <Text style={estilos.contenidoPost}>{publicacion.contenido}</Text>
+      <ImagenesPublicacion imagenes={publicacion.imagenes} />
       <AccionesPublicacion publicacion={publicacion} interactivo={publicacion.puede_interactuar} />
       <Text style={estilos.tituloComentarios}>Comentarios</Text>
     </View>

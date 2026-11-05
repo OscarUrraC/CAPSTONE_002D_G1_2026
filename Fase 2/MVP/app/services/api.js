@@ -150,13 +150,27 @@ export function listarPublicaciones(token, idGrupo) {
   return peticion(token, `/grupos/${idGrupo}/publicaciones`, { mensajeError: "Error al obtener las publicaciones" });
 }
 
-export function crearPublicacion(token, idGrupo, contenido) {
-  return peticion(token, `/grupos/${idGrupo}/publicaciones`, {
-    method: "POST",
-    body: { contenido },
-    mensajeError: "Error al publicar",
-  });
+// imagenes: lista de URIs locales (máx. 4). Siempre va como multipart; el backend acepta ambos.
+export async function crearPublicacion(token, idGrupo, contenido, imagenes = []) {
+  const formData = new FormData();
+  formData.append("contenido", contenido);
+  for (const uri of imagenes) formData.append("imagenes", new File(uri));
+
+  let respuesta;
+  try {
+    respuesta = await fetch(`${API_URL}/grupos/${idGrupo}/publicaciones`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+  } catch {
+    throw new Error("No se pudo conectar con el servidor");
+  }
+  const data = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(data.error ?? "Error al publicar");
+  return data;
 }
+
 
 export function eliminarPublicacion(token, idGrupo, idPublicacion) {
   return peticion(token, `/grupos/${idGrupo}/publicaciones/${idPublicacion}`, {
