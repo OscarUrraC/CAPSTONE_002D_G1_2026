@@ -26,6 +26,8 @@ import {
 import { etiquetaCategoria } from "./GroupsScreen";
 import ReportarModal from "../components/ReportarModal";
 import AccionesPublicacion from "../components/AccionesPublicacion";
+import * as ImagePicker from "expo-image-picker";
+import ImagenesPublicacion from "../components/PublicacionImagenes";
 
 // Misma regla que ProfileScreen para mostrar el nombre.
 export function nombreParaMostrar(autor) {

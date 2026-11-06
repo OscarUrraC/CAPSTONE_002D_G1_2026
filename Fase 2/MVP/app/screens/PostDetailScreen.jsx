@@ -24,7 +24,7 @@ import {
 import AccionesPublicacion from "../components/AccionesPublicacion";
 import { emitirPublicacion } from "../utils/eventosPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
-import ImagenesPublicacion from "../ImagenesPublicaciones/";
+import ImagenesPublicacion from "../components/PublicacionImagenes";
 
 
 // Pantalla de una publicación: el post, sus comentarios (con respuestas) y la caja para comentar.

@@ -1,7 +1,7 @@
 import { View, Text, Image, Pressable, StyleSheet } from "react-native";
 import AccionesPublicacion from "./AccionesPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
-import ImagenesPublicacion from "/ImagenesPublicaciones";
+import ImagenesPublicacion from "./PublicacionImagenes";
 
 // Publicación dentro del feed Para Ti: muestra de qué grupo viene (el feed mezcla varios).
 // onAbrir: abre la pantalla de comentarios. onAbrirGrupo: abre el detalle del grupo.

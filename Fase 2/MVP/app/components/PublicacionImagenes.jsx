@@ -19,6 +19,6 @@ export default function ImagenesPublicacion({ imagenes }) {
 
 const estilos = StyleSheet.create({
   fila: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  unica: { width: "100%", aspectRatio: 4 / 3, borderRadius: 8 },
-  varias: { width: "48.5%", aspectRatio: 1, borderRadius: 8 },
+  unica: { width: "100%", height: 220, borderRadius: 8, backgroundColor: "#e5e7eb" },
+  varias: { width: "48.5%", height: 140, borderRadius: 8, backgroundColor: "#e5e7eb" },
 });
