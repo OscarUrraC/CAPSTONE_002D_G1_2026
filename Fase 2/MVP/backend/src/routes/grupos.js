@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { requireAuth, requireCuentaActiva } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
+import multer from "multer";
+import { procesarImagenes, descartarSubidas, registrarImagenes, adjuntarImagenes } from "../services/imagenesService.js";
+import { enriquecerPublicaciones } from "../services/feedService.js";
+
+
 import {
   SELECT_GRUPO,
   calcularRol,
@@ -9,9 +14,16 @@ import {
   puedeGestionar,
   puedeVerPosts,
 } from "../services/grupoService.js";
-import { enriquecerPublicaciones } from "../services/feedService.js";
 
 export const gruposRouter = Router();
+
+
+const MAX_IMAGENES = 4;
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: MAX_IMAGENES },
+});
+
 
 const CATEGORIAS = ["interes", "academico", "promocion"];
 const SELECT_MIEMBRO =
@@ -419,7 +431,9 @@ gruposRouter.get("/:id/publicaciones", requireAuth, async (req, res) => {
 });
 
 // POST /grupos/:id/publicaciones { contenido } — solo miembros activos
-gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, async (req, res) => {
+// POST /grupos/:id/publicaciones { contenido, imagenes? (multipart) } — solo miembros activos
+gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, recibirImagenes, async (req, res) => {
+  let subidas = [];
   try {
     const { grupo, rol } = await obtenerContextoGrupo(req.params.id, req.usuario.id_perfil);
     if (rol === null) {
@@ -432,6 +446,9 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, async 
     if (limpio.length < 1 || limpio.length > 1000) {
       throw errorConStatus("contenido debe tener entre 1 y 1000 caracteres", 400);
     }
+
+    // Valida, modera y sube las imágenes ANTES de crear la publicación.
+    subidas = await procesarImagenes(req.files ?? [], grupo.id_grupo);
 
     const { data, error } = await supabaseAdmin
       .from("publicacion")
@@ -446,9 +463,14 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, async 
 
     if (error || !data) throw errorConStatus("No se pudo publicar", 500);
 
+    await registrarImagenes(data.id_publicacion, subidas);
+    subidas = []; // ya quedaron registradas: el catch no debe borrar sus archivos
+
+    const [conImagenes] = await adjuntarImagenes([data]);
     // Una publicación recién creada parte sin me gusta ni comentarios.
-    res.status(201).json({ ...data, cantidad_me_gusta: 0, cantidad_comentarios: 0, me_gusta_mio: false });
+    res.status(201).json({ ...conImagenes, cantidad_me_gusta: 0, cantidad_comentarios: 0, me_gusta_mio: false });
   } catch (error) {
+    await descartarSubidas(subidas);
     responderError(res, error);
   }
 });
@@ -506,3 +528,18 @@ gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCue
     responderError(res, error);
   }
 });
+
+
+
+
+// Solo procesa multipart; las peticiones JSON de siempre pasan intactas.
+function recibirImagenes(req, res, next) {
+  upload.array("imagenes", MAX_IMAGENES)(req, res, (err) => {
+    if (!err) return next();
+    const msg =
+      err.code === "LIMIT_FILE_SIZE" ? "Cada imagen admite hasta 5 MB"
+      : err.code === "LIMIT_FILE_COUNT" || err.code === "LIMIT_UNEXPECTED_FILE" ? `Máximo ${MAX_IMAGENES} imágenes`
+      : "No se pudieron recibir las imágenes";
+    res.status(400).json({ error: msg });
+  });
+}

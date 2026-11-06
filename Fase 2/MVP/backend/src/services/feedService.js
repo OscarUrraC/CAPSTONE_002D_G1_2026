@@ -5,6 +5,8 @@ import {
   puedeGestionar,
   puedeVerPosts,
 } from "./grupoService.js";
+import { adjuntarImagenes } from "./imagenesService.js";
+
 
 // Mismos campos de autor que ya usa grupos.js, para que la app muestre el nombre igual en todos lados.
 export const SELECT_AUTOR =
@@ -69,12 +71,14 @@ export async function enriquecerPublicaciones(publicaciones, idPerfil) {
   );
   const mios = new Set(misLikes.data.map((f) => f.id_publicacion));
 
-  return publicaciones.map((p) => ({
+  const enriquecidas = publicaciones.map((p) => ({
     ...p,
     cantidad_me_gusta: conteoPorId.get(p.id_publicacion)?.likes ?? 0,
     cantidad_comentarios: conteoPorId.get(p.id_publicacion)?.comentarios ?? 0,
     me_gusta_mio: mios.has(p.id_publicacion),
   }));
+
+  return adjuntarImagenes(enriquecidas);
 }
 
 /**
