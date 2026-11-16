@@ -13,7 +13,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { listarMotivosReporte, crearReporte } from "../services/api";
 
-// objetivo: { id_publicacion } | { id_grupo } para abrirlo, o null para mantenerlo cerrado.
+// objetivo: { id_publicacion } | { id_comentario } | { id_grupo } para abrirlo, o null para mantenerlo cerrado.
 export default function ReportarModal({ objetivo, onCerrar }) {
   const { token } = useAuth();
   const [motivos, setMotivos] = useState([]);
@@ -55,7 +55,11 @@ export default function ReportarModal({ objetivo, onCerrar }) {
     }
   }
 
-  const titulo = objetivo?.id_grupo ? "Reportar grupo" : "Reportar publicación";
+    const titulo = objetivo?.id_grupo
+    ? "Reportar grupo"
+    : objetivo?.id_comentario
+      ? "Reportar comentario"
+      : "Reportar publicación";
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCerrar}>

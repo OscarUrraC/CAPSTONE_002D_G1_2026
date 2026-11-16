@@ -1,5 +1,6 @@
 import { API_URL } from "../config";
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
+import { fetch as fetchExpo } from "expo/fetch";
 
 export async function obtenerPerfil(token) {
   const respuesta = await fetch(`${API_URL}/perfil/me`, {
@@ -190,6 +191,104 @@ export function crearReporte(token, reporte) {
   return peticion(token, "/reportes", { method: "POST", body: reporte, mensajeError: "Error al enviar el reporte" });
 }
 
+// ---------- Moderación (solo administradores: el backend responde 403 a cualquier otro) ----------
+
+// estado: "pendiente" | "resueltos"  ->  { casos: [{ tipo_objetivo, vista_previa, autor, cantidad_reportes, id_reporte_principal, ... }] }
+export function listarCasosModeracion(token, estado = "pendiente") {
+  return peticion(token, `/admin/reportes?estado=${estado}`, { mensajeError: "Error al obtener los reportes" });
+}
+
+// -> { reporte, objetivo, autor, reportes, contexto, sancion }
+export function obtenerDetalleReporte(token, idReporte) {
+  return peticion(token, `/admin/reportes/${idReporte}`, { mensajeError: "Error al obtener el reporte" });
+}
+
+// datos: { resolucion: "sin_infraccion" | "infraccion" | "escalar", tipo_sancion?, dias?, comentario? }
+export function resolverReporte(token, idReporte, datos) {
+  return peticion(token, `/admin/reportes/${idReporte}/resolver`, {
+    method: "POST",
+    body: datos,
+    mensajeError: "No se pudo resolver el reporte",
+  });
+}
+
+// datos: { id_publicacion | id_comentario, tipo_sancion: "temporal" | "baneo" | "escalar", dias?, comentario? }
+// -> { id_sancion, id_perfil_afectado, cuenta_baneada }
+export function sancionarDirecto(token, datos) {
+  return peticion(token, "/admin/sanciones", {
+    method: "POST",
+    body: datos,
+    mensajeError: "No se pudo aplicar la sanción",
+  });
+}
+
+// Descarga el informe PDF de una sanción escalada a la caché del teléfono y devuelve la URI local.
+// El servidor lo genera cada vez que se pide; solo los administradores pueden hacerlo.
+export async function descargarInformeSancion(token, idSancion) {
+  let respuesta;
+  try {
+    respuesta = await fetchExpo(`${API_URL}/admin/sanciones/${idSancion}/informe`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new Error("No se pudo conectar con el servidor");
+  }
+
+  if (!respuesta.ok) {
+    const data = await respuesta.json().catch(() => ({}));
+    throw new Error(data.error ?? "No se pudo generar el informe");
+  }
+
+  const bytes = new Uint8Array(await respuesta.arrayBuffer());
+  const archivo = new File(Paths.cache, `informe-${idSancion.slice(0, 8)}.pdf`);
+  archivo.create({ overwrite: true });
+  await archivo.write(bytes);
+  return archivo.uri;
+}
+
+// ---------- Revisión por IA (solo administradores) ----------
+
+// estado: "pendiente" | "resueltas"  ->  { items: [{ id_publicacion, motivo, categorias_marcadas, vista_previa, cantidad_imagenes, grupo, autor, ... }] }
+export function listarRevisionesIA(token, estado = "pendiente") {
+  return peticion(token, `/admin/moderacion?estado=${estado}`, { mensajeError: "Error al obtener la cola de revisión" });
+}
+
+// Las rutas de comentarios cuelgan de /admin/moderacion/comentarios/:id.
+function rutaRevision(idObjetivo, tipo) {
+  return tipo === "comentario"
+    ? `/admin/moderacion/comentarios/${idObjetivo}`
+    : `/admin/moderacion/${idObjetivo}`;
+}
+
+// tipo: "publicacion" (por defecto) | "comentario"
+// -> { revision, publicacion | comentario, contexto?, autor, imagenes, umbrales }
+export function obtenerRevisionIA(token, idObjetivo, tipo = "publicacion") {
+  return peticion(token, rutaRevision(idObjetivo, tipo), { mensajeError: "Error al obtener la revisión" });
+}
+
+// datos: { decision: "aprobada" | "rechazada" | "sancionada", tipo_sancion?, dias?, comentario? }
+export function decidirRevisionIA(token, idObjetivo, datos, tipo = "publicacion") {
+  return peticion(token, `${rutaRevision(idObjetivo, tipo)}/decision`, {
+    method: "POST",
+    body: datos,
+    mensajeError: "No se pudo registrar la decisión",
+  });
+}
+
+// -> { umbrales: [{ categoria, umbral, aplica_a_imagenes }] }
+export function obtenerUmbralesModeracion(token) {
+  return peticion(token, "/admin/moderacion/umbrales", { mensajeError: "Error al obtener los umbrales" });
+}
+
+// umbrales: { "harassment": 0.85, ... } (solo las categorías que cambian)
+export function guardarUmbralesModeracion(token, umbrales) {
+  return peticion(token, "/admin/moderacion/umbrales", {
+    method: "PUT",
+    body: { umbrales },
+    mensajeError: "No se pudieron guardar los umbrales",
+  });
+}
+
 // ---------- Feed, me gusta y comentarios (módulo Feeds) ----------
 
 // GET /feed/para-ti?limite=&antes=  ->  { publicaciones, siguiente, sin_grupos }
@@ -276,6 +375,14 @@ export function crearAnuncio(token, contenido) {
     method: "POST",
     body: { contenido },
     mensajeError: "No se pudo publicar el anuncio",
+  });
+}
+
+// Solo administradores: oculta el anuncio (borrado suave).
+export function eliminarAnuncio(token, idPublicacion) {
+  return peticion(token, `/feed/anuncios/${idPublicacion}`, {
+    method: "DELETE",
+    mensajeError: "No se pudo eliminar el anuncio",
   });
 }
 

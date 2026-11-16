@@ -10,6 +10,7 @@ import { reportesRouter } from "./routes/reportes.js";
 import { feedRouter } from "./routes/feed.js";
 import { publicacionesRouter } from "./routes/publicaciones.js";
 import { comentariosRouter } from "./routes/comentarios.js";
+import { adminRouter } from "./routes/admin.js";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/eventos", eventosRouter);
 app.use("/feed", feedRouter);
 app.use("/publicaciones", publicacionesRouter);
 app.use("/comentarios", comentariosRouter);
+app.use("/admin", adminRouter);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

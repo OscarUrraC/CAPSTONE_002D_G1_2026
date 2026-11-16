@@ -5,7 +5,8 @@ import ImagenesPublicacion from "./PublicacionImagenes";
 
 // Publicación dentro del feed Para Ti: muestra de qué grupo viene (el feed mezcla varios).
 // onAbrir: abre la pantalla de comentarios. onAbrirGrupo: abre el detalle del grupo.
-export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo }) {
+// onEliminar (opcional): si llega, se muestra "Eliminar anuncio" (solo lo pasa el feed Anuncios a administradores).
+export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo, onEliminar }) {
   const { autor, grupo } = publicacion;
 
   return (
@@ -35,6 +36,12 @@ export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo }) {
       <ImagenesPublicacion imagenes={publicacion.imagenes} />
       {/* Dentro del feed siempre soy miembro del grupo, por eso es interactivo. */}
       <AccionesPublicacion publicacion={publicacion} interactivo onAbrirComentarios={onAbrir} />
+
+      {onEliminar && (
+        <Pressable onPress={onEliminar} hitSlop={6}>
+          <Text style={estilos.eliminar}>Eliminar anuncio</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -49,4 +56,5 @@ const estilos = StyleSheet.create({
   nombreAutor: { fontWeight: "600", color: "#111827" },
   fecha: { fontSize: 12, color: "#9ca3af" },
   contenido: { fontSize: 15, color: "#111827" },
+  eliminar: { fontSize: 13, color: "#dc2626", fontWeight: "600" },
 });

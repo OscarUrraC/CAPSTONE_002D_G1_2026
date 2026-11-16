@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireCuentaActiva } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
 
 export const perfilRouter = Router();
@@ -14,7 +14,7 @@ const SELECT_PERFIL =
   "id_perfil, nombres, primer_apellido, segundo_apellido, apodo, mostrar_apodo, correo, rol_plataforma, foto_perfil_url, semestre, carrera:id_carrera(nombre)";
 
 // GET /perfil/me
-perfilRouter.get("/me", requireAuth, async (req, res) => {
+perfilRouter.get("/me", requireAuth, requireCuentaActiva, async (req, res) => {
   const { data: perfil, error } = await supabaseAdmin
     .from("perfil")
     .select(SELECT_PERFIL)
@@ -59,7 +59,7 @@ perfilRouter.patch("/me", requireAuth, async (req, res) => {
 });
 
 // POST /perfil/me/foto  (multipart/form-data, campo "foto")
-perfilRouter.post("/me/foto", requireAuth, upload.single("foto"), async (req, res) => {
+perfilRouter.post("/me/foto", requireAuth, requireCuentaActiva, upload.single("foto"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "Falta el archivo (campo 'foto')" });
   }

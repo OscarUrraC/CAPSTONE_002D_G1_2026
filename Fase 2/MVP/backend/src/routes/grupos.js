@@ -3,17 +3,9 @@ import { requireAuth, requireCuentaActiva } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import multer from "multer";
 import { procesarImagenes, descartarSubidas, registrarImagenes, adjuntarImagenes } from "../services/imagenesService.js";
-import { enriquecerPublicaciones } from "../services/feedService.js";
-
-
-import {
-  SELECT_GRUPO,
-  calcularRol,
-  errorConStatus,
-  obtenerContextoGrupo,
-  puedeGestionar,
-  puedeVerPosts,
-} from "../services/grupoService.js";
+import { enriquecerPublicaciones, esAdministrador } from "../services/feedService.js";
+import { moderarTexto } from "../services/moderacionIA.js";
+import { SELECT_GRUPO, calcularRol, errorConStatus, obtenerContextoGrupo, puedeGestionar, puedeVerPosts } from "../services/grupoService.js";
 
 export const gruposRouter = Router();
 
@@ -430,8 +422,29 @@ gruposRouter.get("/:id/publicaciones", requireAuth, async (req, res) => {
   }
 });
 
-// POST /grupos/:id/publicaciones { contenido } — solo miembros activos
-// POST /grupos/:id/publicaciones { contenido, imagenes? (multipart) } — solo miembros activos
+// Fila de moderacion_resultado para una publicación retenida: puntajes de texto e imágenes,
+// categorías que superaron el umbral y si la causa fue el umbral o un fallo de la API.
+function armarResultadoModeracion(idPublicacion, moderacionTexto, subidas) {
+  const categorias = new Set(moderacionTexto.categorias);
+  for (const { moderacion } of subidas) {
+    moderacion.categorias?.forEach((categoria) => categorias.add(categoria));
+  }
+  const causas = [moderacionTexto.motivo, ...subidas.map((s) => s.moderacion.causa)].filter(Boolean);
+
+  return {
+    id_publicacion: idPublicacion,
+    puntajes: {
+      texto: moderacionTexto.puntajes,
+      imagenes: subidas.map((s) => ({ orden: s.orden, puntajes: s.moderacion.puntajes ?? null })),
+    },
+    categorias_marcadas: [...categorias],
+    motivo: causas.includes("umbral") ? "umbral" : "error_api",
+  };
+}
+
+// POST /grupos/:id/publicaciones { contenido, imagenes? (multipart) } — solo miembros activos.
+// El texto y las imágenes pasan por el filtro de IA. Si algo supera los umbrales (o la API falla),
+// la publicación queda en estado 'en_revision': nadie la ve y un administrador decide qué hacer.
 gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, recibirImagenes, async (req, res) => {
   let subidas = [];
   try {
@@ -447,8 +460,17 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, recibi
       throw errorConStatus("contenido debe tener entre 1 y 1000 caracteres", 400);
     }
 
-    // Valida, modera y sube las imágenes ANTES de crear la publicación.
-    subidas = await procesarImagenes(req.files ?? [], grupo.id_grupo);
+    // Valida, modera y sube las imágenes ANTES de crear la publicación; el texto se modera en paralelo.
+    // moderarTexto nunca lanza: si la API falla, devuelve "pendiente" con motivo "error_api".
+    const [imagenesSubidas, moderacionTexto] = await Promise.all([
+      procesarImagenes(req.files ?? [], grupo.id_grupo),
+      moderarTexto(limpio),
+    ]);
+    subidas = imagenesSubidas;
+
+    const enRevision =
+      moderacionTexto.resultado !== "aprobada" ||
+      subidas.some((s) => s.moderacion.resultado !== "aprobada");
 
     const { data, error } = await supabaseAdmin
       .from("publicacion")
@@ -457,14 +479,31 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, recibi
         id_grupo: grupo.id_grupo,
         tipo: "grupo",
         contenido: limpio,
+        estado: enRevision ? "en_revision" : "activa",
       })
       .select(SELECT_PUBLICACION)
       .single();
 
     if (error || !data) throw errorConStatus("No se pudo publicar", 500);
 
+    if (enRevision) {
+      const { error: errorResultado } = await supabaseAdmin
+        .from("moderacion_resultado")
+        .insert(armarResultadoModeracion(data.id_publicacion, moderacionTexto, subidas));
+
+      if (errorResultado) {
+        // Sin fila en la cola, una publicación oculta quedaría huérfana: se deshace.
+        console.error("moderacion_resultado:", errorResultado);
+        await supabaseAdmin.from("publicacion").delete().eq("id_publicacion", data.id_publicacion);
+        throw errorConStatus("No se pudo publicar", 500);
+      }
+    }
+
     await registrarImagenes(data.id_publicacion, subidas);
     subidas = []; // ya quedaron registradas: el catch no debe borrar sus archivos
+
+    // 202: recibida, pero aún no publicada. No se revela al autor qué categorías se marcaron.
+    if (enRevision) return res.status(202).json({ en_revision: true });
 
     const [conImagenes] = await adjuntarImagenes([data]);
     // Una publicación recién creada parte sin me gusta ni comentarios.
@@ -476,9 +515,9 @@ gruposRouter.post("/:id/publicaciones", requireAuth, requireCuentaActiva, recibi
 });
 
 // DELETE /grupos/:id/publicaciones/:idPublicacion — borrado suave (estado = 'eliminada').
-// Puede hacerlo el autor, o el moderador / un colaborador. Guarda quién, cuándo y motivo
-// (automático si es el propio autor, opcional si lo hace un moderador/colaborador), como exige
-// la trazabilidad de MO-0001-0006.
+// Puede hacerlo el autor, el moderador / un colaborador, o un administrador de la plataforma.
+// Guarda quién, cuándo y motivo (automático si es el propio autor, opcional si lo hace otra persona),
+// como exige la trazabilidad de MO-0001-0006.
 gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCuentaActiva, async (req, res) => {
   try {
     const { grupo, rol } = await obtenerContextoGrupo(req.params.id, req.usuario.id_perfil);
@@ -495,8 +534,8 @@ gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCue
     if (error || !publicacion) throw errorConStatus("Publicación no encontrada", 404);
 
     const esAutor = publicacion.id_perfil_autor === req.usuario.id_perfil;
-    if (!esAutor && !puedeGestionar(rol)) {
-      throw errorConStatus("Solo el autor, el moderador o un colaborador puede eliminar esta publicación", 403);
+    if (!esAutor && !puedeGestionar(rol) && !esAdministrador(req.usuario)) {
+      throw errorConStatus("Solo el autor, el moderador, un colaborador o un administrador puede eliminar esta publicación", 403);
     }
 
     const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim() : "";
@@ -504,7 +543,7 @@ gruposRouter.delete("/:id/publicaciones/:idPublicacion", requireAuth, requireCue
       throw errorConStatus("motivo admite hasta 200 caracteres", 400);
     }
     // Si elimina el propio autor, el motivo es siempre el mismo (no se le pide ni se le deja editar).
-    // Si elimina un moderador/colaborador, el motivo que haya escrito es opcional.
+    // Si elimina otra persona, el motivo que haya escrito es opcional.
     const motivoFinal = esAutor ? "Eliminado por el usuario" : motivo === "" ? null : motivo;
 
     const { data: actualizada, error: errorUpdate } = await supabaseAdmin

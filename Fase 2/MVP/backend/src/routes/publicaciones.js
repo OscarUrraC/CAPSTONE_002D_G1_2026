@@ -2,17 +2,9 @@ import { Router } from "express";
 import { requireAuth, requireCuentaActiva } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
 import { errorConStatus } from "../services/grupoService.js";
-import {
-  SELECT_AUTOR,
-  contarMeGustaPublicacion,
-  enriquecerPublicaciones,
-  esAdministrador,
-  obtenerPublicacionVisible,
-  responderError,
-  validarContenido,
-  validarUuid,
-} from "../services/feedService.js";
+import { SELECT_AUTOR, contarMeGustaPublicacion, enriquecerPublicaciones, esAdministrador, obtenerPublicacionVisible, responderError, validarContenido, validarUuid } from "../services/feedService.js";
 import { armarArbolComentarios } from "../services/comentariosArbol.js";
+import { moderarTexto } from "../services/moderacionIA.js";
 
 export const publicacionesRouter = Router();
 
@@ -146,6 +138,8 @@ publicacionesRouter.get("/:id/comentarios", requireAuth, async (req, res) => {
 
 // POST /publicaciones/:id/comentarios { contenido, id_comentario_padre? }
 // Sin id_comentario_padre = comentario nuevo. Con id_comentario_padre = respuesta a ese comentario.
+// El texto pasa por el filtro de IA: si supera un umbral (o la API falla), el comentario queda
+// 'en_revision' (nadie lo ve) y un administrador decide.
 publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, async (req, res) => {
   try {
     const { publicacion, puedeInteractuar } = await obtenerPublicacionVisible(req.params.id, req.usuario);
@@ -167,7 +161,7 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
         .select(`id_comentario, id_comentario_padre, id_comentario_raiz, autor:id_perfil_autor(${SELECT_AUTOR})`)
         .eq("id_comentario", id_comentario_padre)
         .eq("id_publicacion", publicacion.id_publicacion) // debe ser de ESTA publicación
-        .eq("estado", "activo") // no se responde a algo eliminado
+        .eq("estado", "activo") // no se responde a algo eliminado ni retenido
         .maybeSingle();
 
       if (error) throw errorConStatus("No se pudo validar el comentario", 500);
@@ -178,6 +172,11 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
       idRaiz = data.id_comentario_raiz ?? data.id_comentario;
     }
 
+    // Se modera lo que escribió el usuario (antes de que el reintento de abajo agregue una mención).
+    // moderarTexto nunca lanza: si la API falla, devuelve "pendiente" con motivo "error_api".
+    const moderacion = await moderarTexto(contenido);
+    const enRevision = moderacion.resultado !== "aprobada";
+
     const insertar = (idComentarioPadre) =>
       supabaseAdmin
         .from("comentario")
@@ -187,6 +186,7 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
           contenido,
           id_comentario_padre: idComentarioPadre,
           id_comentario_raiz: idRaiz,
+          estado: enRevision ? "en_revision" : "activo",
         })
         .select(SELECT_COMENTARIO)
         .single();
@@ -203,6 +203,25 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
     }
 
     if (error || !creado) throw errorConStatus("No se pudo publicar el comentario", 500);
+
+    if (enRevision) {
+      const { error: errorResultado } = await supabaseAdmin.from("moderacion_resultado").insert({
+        id_comentario: creado.id_comentario,
+        puntajes: { texto: moderacion.puntajes, imagenes: [] },
+        categorias_marcadas: moderacion.categorias,
+        motivo: moderacion.motivo,
+      });
+
+      if (errorResultado) {
+        // Sin fila en la cola, un comentario oculto quedaría huérfano: se deshace.
+        console.error("moderacion_resultado (comentario):", errorResultado);
+        await supabaseAdmin.from("comentario").delete().eq("id_comentario", creado.id_comentario);
+        throw errorConStatus("No se pudo publicar el comentario", 500);
+      }
+
+      // 202: recibido, pero aún no publicado. No se revela al autor qué categorías se marcaron.
+      return res.status(202).json({ en_revision: true });
+    }
 
     res.status(201).json({
       id_comentario: creado.id_comentario,

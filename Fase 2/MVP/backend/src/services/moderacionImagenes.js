@@ -1,9 +1,22 @@
-// PUNTO DE EXTENSIÓN: aquí se conecta el filtro de imágenes.
-// Recibe { buffer, mimetype } y debe devolver:
-//   { resultado: "aprobada" | "rechazada" | "pendiente", motivo, proveedor }
-// - "rechazada": el post se rechaza y la imagen no se guarda.
-// - "pendiente": se guarda pero NO se muestra hasta que alguien la apruebe.
-// Mientras no haya filtro real, aprueba todo.
+import { moderarImagenIA } from "./moderacionIA.js";
+
+// PUNTO DE EXTENSIÓN del filtro de imágenes (contrato original de imagenesService.js):
+// recibe { buffer, mimetype } y devuelve { resultado: "aprobada" | "rechazada" | "pendiente", motivo, proveedor }.
+// Ahora nunca devuelve "rechazada": lo sospechoso queda "pendiente" y lo decide un administrador.
+// Se agrega `puntajes` (los usa la cola de revisión; el resto del código lo ignora).
 export async function moderarImagen({ buffer, mimetype }) {
-  return { resultado: "aprobada", motivo: null, proveedor: "ninguno" };
+  const r = await moderarImagenIA({ buffer, mimetype });
+
+  let motivo = null;
+  if (r.motivo === "umbral") motivo = `Categorías sobre el umbral: ${r.categorias.join(", ")}`;
+  if (r.motivo === "error_api") motivo = "La API de moderación no respondió";
+
+  return {
+    resultado: r.resultado,
+    motivo,
+    proveedor: "openai-omni-moderation",
+    puntajes: r.puntajes,
+    categorias: r.categorias,
+    causa: r.motivo, // "umbral" | "error_api" | null: lo usa la cola de revisión
+  };
 }

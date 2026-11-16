@@ -25,7 +25,8 @@ import AccionesPublicacion from "../components/AccionesPublicacion";
 import { emitirPublicacion } from "../utils/eventosPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
 import ImagenesPublicacion from "../components/PublicacionImagenes";
-
+import ReportarModal from "../components/ReportarModal";
+import SancionarModal from "../components/SancionarModal";
 
 // Pantalla de una publicación: el post, sus comentarios (con respuestas) y la caja para comentar.
 // Se abre desde el feed Para Ti y desde el detalle de un grupo (ruta "DetallePublicacion").
@@ -42,6 +43,8 @@ export default function PostDetailScreen({ route }) {
   const [objetivo, setObjetivo] = useState(null); // { id_comentario, nombre } si estoy respondiendo
   const [enviando, setEnviando] = useState(false);
   const [abiertos, setAbiertos] = useState({}); // id del comentario -> respuestas desplegadas
+  const [objetivoReporte, setObjetivoReporte] = useState(null); // { id_comentario } si estoy reportando
+  const [objetivoSancion, setObjetivoSancion] = useState(null); // { id_comentario } si estoy sancionando
   const input = useRef(null);
   // Alto real de la cabecera: el KeyboardAvoidingView lo necesita para calcular cuánto subir la caja.
   const alturaCabecera = useHeaderHeight();
@@ -80,9 +83,15 @@ export default function PostDetailScreen({ route }) {
   async function enviar() {
     setEnviando(true);
     try {
-      await crearComentario(token, idPublicacion, texto, objetivo?.id_comentario);
+      const r = await crearComentario(token, idPublicacion, texto, objetivo?.id_comentario);
       setTexto("");
       setObjetivo(null);
+      if (r.en_revision) {
+        Alert.alert(
+          "Comentario en revisión",
+          "Tu comentario necesita ser revisado por un administrador antes de aparecer."
+        );
+      }
       await cargarComentarios();
     } catch (e) {
       Alert.alert("No se pudo publicar", e.message);
@@ -156,6 +165,8 @@ export default function PostDetailScreen({ route }) {
             puedeInteractuar={puedeComentar}
             onResponder={responder}
             onEliminar={confirmarEliminar}
+            onReportar={(c) => setObjetivoReporte({ id_comentario: c.id_comentario })}
+            onSancionar={(c) => setObjetivoSancion({ id_comentario: c.id_comentario })}
           />
         )}
       />
@@ -198,6 +209,13 @@ export default function PostDetailScreen({ route }) {
       ) : (
         <Text style={estilos.avisoSoloLectura}>Únete al grupo para dar me gusta y comentar.</Text>
       )}
+      <ReportarModal objetivo={objetivoReporte} onCerrar={() => setObjetivoReporte(null)} />
+
+      <SancionarModal
+        objetivo={objetivoSancion}
+        onCerrar={() => setObjetivoSancion(null)}
+        onListo={cargarComentarios}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -233,7 +251,7 @@ function CabeceraPublicacion({ publicacion }) {
 }
 
 // Un comentario de primer nivel + sus respuestas (desplegables).
-function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onResponder, onEliminar }) {
+function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onResponder, onEliminar, onReportar, onSancionar }) {
   const respuestas = comentario.respuestas ?? [];
 
   return (
@@ -243,6 +261,8 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
         puedeInteractuar={puedeInteractuar}
         onResponder={() => onResponder(comentario, comentario.id_comentario)}
         onEliminar={() => onEliminar(comentario)}
+        onReportar={() => onReportar(comentario)}
+        onSancionar={() => onSancionar(comentario)}
       />
 
       {respuestas.length > 0 && (
@@ -265,6 +285,8 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
               puedeInteractuar={puedeInteractuar}
               onResponder={() => onResponder(r, comentario.id_comentario)}
               onEliminar={() => onEliminar(r)}
+              onReportar={() => onReportar(r)}
+              onSancionar={() => onSancionar(r)}
             />
           ))}
         </View>
@@ -272,12 +294,17 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
     </View>
   );
 }
+function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onEliminar, onReportar, onSancionar }) {
+  // El hook va antes del return anticipado: las reglas de hooks exigen llamarlo siempre.
+  const { perfil } = useAuth();
 
-function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onEliminar }) {
   // Comentario eliminado que se conserva solo porque tiene respuestas: no muestra contenido ni autor.
   if (comentario.eliminado) {
     return <Text style={estilos.eliminado}>Comentario eliminado</Text>;
   }
+
+  const esMio = comentario.autor?.id_perfil === perfil?.id_perfil;
+  const esAdmin = perfil?.rol_plataforma === "administrador";
 
   return (
     <View style={estilos.comentario}>
@@ -299,6 +326,16 @@ function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onElim
         {comentario.puede_eliminar && (
           <Pressable onPress={onEliminar} hitSlop={8}>
             <Text style={[estilos.accion, estilos.accionPeligro]}>Eliminar</Text>
+          </Pressable>
+        )}
+        {!esMio && (
+          <Pressable onPress={onReportar} hitSlop={8}>
+            <Text style={estilos.accion}>Reportar</Text>
+          </Pressable>
+        )}
+        {esAdmin && !esMio && (
+          <Pressable onPress={onSancionar} hitSlop={8}>
+            <Text style={[estilos.accion, estilos.accionPeligro]}>Sancionar</Text>
           </Pressable>
         )}
       </View>

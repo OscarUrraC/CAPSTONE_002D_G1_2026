@@ -197,6 +197,10 @@ export async function login(body = {}) {
   if (errorPerfil) throw crearError(500, "No se pudo obtener el perfil");
   // Existe en Auth pero sin perfil (p. ej. registro a medias): no se puede entrar.
   if (!perfil) throw crearError(403, "Tu cuenta no tiene un perfil completo");
+  // Baneo permanente: no puede iniciar sesión. La sanción temporal sí deja entrar (solo lectura).
+  if (perfil.estado_cuenta === "baneada") {
+    throw crearError(403, "Tu cuenta fue baneada de forma permanente");
+  }
 
   return { token: emitirToken(perfil), perfil };
 }

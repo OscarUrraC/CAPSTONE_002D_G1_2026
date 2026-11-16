@@ -1,30 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  FlatList,
-  Modal,
-  Image,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, Modal, Image, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import {
-  obtenerGrupo,
-  editarGrupo,
-  unirseAGrupo,
-  salirDeGrupo,
-  listarPublicaciones,
-  crearPublicacion,
-  eliminarPublicacion,
-} from "../services/api";
+import { obtenerGrupo, editarGrupo, unirseAGrupo, salirDeGrupo, listarPublicaciones, crearPublicacion, eliminarPublicacion } from "../services/api";
 import { etiquetaCategoria } from "./GroupsScreen";
 import ReportarModal from "../components/ReportarModal";
+import SancionarModal from "../components/SancionarModal";
 import AccionesPublicacion from "../components/AccionesPublicacion";
 import * as ImagePicker from "expo-image-picker";
 import ImagenesPublicacion from "../components/PublicacionImagenes";
@@ -57,9 +38,11 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [editando, setEditando] = useState(false);
   const [objetivoReporte, setObjetivoReporte] = useState(null);
+  const [objetivoSancion, setObjetivoSancion] = useState(null);
 
   // Solo para mostrar u ocultar botones: el backend vuelve a validar cada acción.
   const gestiona = grupo?.mi_rol === "moderador" || grupo?.mi_rol === "colaborador";
+  const esAdmin = perfil.rol_plataforma === "administrador";
   const puedeVer = grupo !== null && (!grupo.ingreso_limitado || grupo.mi_rol !== null);
 
   const cargar = useCallback(async () => {
@@ -133,14 +116,21 @@ export default function GroupDetailScreen({ route, navigation }) {
     setImagenes((actuales) => actuales.filter((u) => u !== uri));
   }
 
-  async function publicar() {
+    async function publicar() {
     setPublicando(true);
     setError(null);
     try {
       const nueva = await crearPublicacion(token, idGrupo, contenido, imagenes);
-      setPublicaciones((actuales) => [nueva, ...actuales]);
       setContenido("");
       setImagenes([]);
+      if (nueva.en_revision) {
+        Alert.alert(
+          "Publicación en revisión",
+          "Tu publicación necesita ser revisada por un administrador antes de aparecer en el grupo."
+        );
+      } else {
+        setPublicaciones((actuales) => [nueva, ...actuales]);
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -168,13 +158,21 @@ export default function GroupDetailScreen({ route, navigation }) {
     ]);
   }
 
-  function opcionesPublicacion(publicacion) {
+    function opcionesPublicacion(publicacion) {
     const esMia = publicacion.autor.id_perfil === perfil.id_perfil;
     const botones = [];
-    if (esMia || gestiona) {
+    // El administrador también puede eliminar publicaciones de grupos que no modera.
+    if (esMia || gestiona || esAdmin) {
       botones.push({ text: "Eliminar", style: "destructive", onPress: () => confirmarEliminar(publicacion) });
     }
-    if (!esMia) {
+    if (esAdmin && !esMia) {
+      // El administrador sanciona directo (Alert admite 3 botones en Android: por eso no se agrega "Reportar").
+      botones.push({
+        text: "Sancionar autor",
+        style: "destructive",
+        onPress: () => setObjetivoSancion({ id_publicacion: publicacion.id_publicacion }),
+      });
+    } else if (!esMia) {
       botones.push({
         text: "Reportar",
         onPress: () => setObjetivoReporte({ id_publicacion: publicacion.id_publicacion }),
@@ -379,6 +377,8 @@ export default function GroupDetailScreen({ route, navigation }) {
       />
 
       <ReportarModal objetivo={objetivoReporte} onCerrar={() => setObjetivoReporte(null)} />
+
+      <SancionarModal objetivo={objetivoSancion} onCerrar={() => setObjetivoSancion(null)} onListo={cargar} />
     </View>
   );
 }

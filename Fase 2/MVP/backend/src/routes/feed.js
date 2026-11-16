@@ -6,6 +6,7 @@ import {
   enriquecerPublicaciones,
   responderError,
   validarContenido,
+  validarUuid,
 } from "../services/feedService.js";
 import { errorConStatus } from "../services/grupoService.js";
 
@@ -120,7 +121,7 @@ feedRouter.get("/anuncios", requireAuth, async (req, res) => {
 
 // POST /feed/anuncios { contenido }  — solo administradores.
 // id_sede lo completa el trigger trg_publicacion_anuncio_heredar_sede; id_grupo queda nulo.
-// El rol se lee del JWT: si le quitan el rol a un administrador, su token sigue valiendo hasta que expire.
+// El rol se lee de la BD en cada petición (middleware/auth.js): quitarle el rol a un administrador surte efecto de inmediato.
 feedRouter.post(
   "/anuncios",
   requireAuth,
@@ -143,6 +144,44 @@ feedRouter.post(
 
       const [anuncio] = await enriquecerPublicaciones([data], req.usuario.id_perfil);
       res.status(201).json(anuncio);
+    } catch (error) {
+      responderError(res, error);
+    }
+  }
+);
+
+// DELETE /feed/anuncios/:id — solo administradores. Borrado suave con trazabilidad (MO-0001-0006):
+// queda quién lo eliminó y cuándo, igual que en las publicaciones de grupo.
+feedRouter.delete(
+  "/anuncios/:id",
+  requireAuth,
+  requireCuentaActiva,
+  requireRol("administrador"),
+  async (req, res) => {
+    try {
+      validarUuid(req.params.id, "Anuncio no encontrado");
+
+      const { data, error } = await supabaseAdmin
+        .from("publicacion")
+        .update({
+          estado: "eliminada",
+          eliminado_por: req.usuario.id_perfil,
+          eliminado_en: new Date().toISOString(),
+          motivo_eliminacion: "Eliminado por un administrador",
+        })
+        .eq("id_publicacion", req.params.id)
+        .eq("tipo", "anuncio")
+        .eq("estado", "activa") // si dos administradores lo eliminan a la vez, solo el primero queda registrado
+        .select("id_publicacion")
+        .maybeSingle();
+
+      if (error) {
+        console.error("eliminar anuncio:", error);
+        throw errorConStatus("No se pudo eliminar el anuncio", 500);
+      }
+      if (!data) throw errorConStatus("Anuncio no encontrado", 404);
+
+      res.json({ ok: true });
     } catch (error) {
       responderError(res, error);
     }

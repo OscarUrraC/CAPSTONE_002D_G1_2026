@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, FlatList, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, FlatList, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { useAuth } from "../context/AuthContext";
-import { obtenerFeedParaTi, obtenerFeedAnuncios } from "../services/api";
+import { obtenerFeedParaTi, obtenerFeedAnuncios, eliminarAnuncio } from "../services/api";
 import TarjetaFeed from "../components/TarjetaFeed";
 
 const TAMANO_PAGINA = 20;
@@ -115,6 +115,27 @@ export default function FeedScreen({ navigation, route }) {
     });
   }
 
+  // Solo administradores (el botón solo se muestra a ellos y el backend vuelve a validar).
+  function confirmarEliminarAnuncio(publicacion) {
+    Alert.alert("Eliminar anuncio", "El anuncio dejará de ser visible para todos los estudiantes.", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await eliminarAnuncio(token, publicacion.id_publicacion);
+            setPublicaciones((actuales) =>
+              actuales.filter((p) => p.id_publicacion !== publicacion.id_publicacion)
+            );
+          } catch (e) {
+            Alert.alert("Error", e.message);
+          }
+        },
+      },
+    ]);
+  }
+
   function renderCabecera() {
     const puedePublicar = modo === "anuncios" && perfil.rol_plataforma === "administrador";
     return (
@@ -200,6 +221,11 @@ export default function FeedScreen({ navigation, route }) {
           publicacion={item}
           onAbrir={() => abrirPublicacion(item)}
           onAbrirGrupo={() => abrirGrupo(item)}
+          onEliminar={
+            modo === "anuncios" && perfil.rol_plataforma === "administrador"
+              ? () => confirmarEliminarAnuncio(item)
+              : undefined
+          }
         />
       )}
     />
