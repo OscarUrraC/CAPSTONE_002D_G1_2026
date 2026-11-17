@@ -66,8 +66,8 @@ feedRouter.get("/para-ti", requireAuth, async (req, res) => {
     const { data, error } = await consulta;
     if (error) throw errorConStatus("No se pudo obtener el feed", 500);
 
-    // 3) Me gusta y comentarios de la página (2 consultas en total).
-    const publicaciones = await enriquecerPublicaciones(data, idPerfil);
+    // 3) Me gusta, comentarios y permisos de la página (se pasa el usuario completo, no solo el id).
+    const publicaciones = await enriquecerPublicaciones(data, req.usuario);
 
     // Si llegó una página incompleta, ya no hay más: la app deja de pedir.
     const siguiente = data.length === limite ? data[data.length - 1].creado_en : null;
@@ -110,7 +110,7 @@ feedRouter.get("/anuncios", requireAuth, async (req, res) => {
       throw errorConStatus("No se pudieron obtener los anuncios", 500);
     }
 
-    const publicaciones = await enriquecerPublicaciones(data, req.usuario.id_perfil);
+    const publicaciones = await enriquecerPublicaciones(data, req.usuario);
     const siguiente = data.length === limite ? data[data.length - 1].creado_en : null;
 
     res.json({ publicaciones, siguiente });
@@ -142,7 +142,7 @@ feedRouter.post(
         throw errorConStatus("No se pudo publicar el anuncio", 500);
       }
 
-      const [anuncio] = await enriquecerPublicaciones([data], req.usuario.id_perfil);
+      const [anuncio] = await enriquecerPublicaciones([data], req.usuario);
       res.status(201).json(anuncio);
     } catch (error) {
       responderError(res, error);

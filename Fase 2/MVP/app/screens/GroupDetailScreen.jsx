@@ -2,31 +2,23 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, Modal, Image, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import { obtenerGrupo, editarGrupo, unirseAGrupo, salirDeGrupo, listarPublicaciones, crearPublicacion, eliminarPublicacion } from "../services/api";
+import { obtenerGrupo, editarGrupo, unirseAGrupo, salirDeGrupo, listarPublicaciones, crearPublicacion } from "../services/api";
 import { etiquetaCategoria } from "./GroupsScreen";
 import ReportarModal from "../components/ReportarModal";
-import SancionarModal from "../components/SancionarModal";
-import AccionesPublicacion from "../components/AccionesPublicacion";
+import MenuAcciones from "../components/MenuAcciones";
+import TarjetaFeed from "../components/TarjetaFeed";
+import useAccionesPublicacion from "../hooks/useAccionesPublicacion";
 import * as ImagePicker from "expo-image-picker";
-import ImagenesPublicacion from "../components/PublicacionImagenes";
 
 // Misma regla que ProfileScreen para mostrar el nombre.
+// Se mantiene exportada: GroupMembersScreen la importa de aquí.
 export function nombreParaMostrar(autor) {
   return autor.mostrar_apodo && autor.apodo ? autor.apodo : autor.nombres;
 }
 
-function formatearFecha(iso) {
-  return new Date(iso).toLocaleString("es-CL", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export default function GroupDetailScreen({ route, navigation }) {
   const { idGrupo } = route.params;
-  const { token, perfil } = useAuth();
+  const { token } = useAuth();
   const [grupo, setGrupo] = useState(null);
   const [publicaciones, setPublicaciones] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -37,12 +29,15 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [publicando, setPublicando] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [editando, setEditando] = useState(false);
-  const [objetivoReporte, setObjetivoReporte] = useState(null);
-  const [objetivoSancion, setObjetivoSancion] = useState(null);
+  const [objetivoReporte, setObjetivoReporte] = useState(null); // solo para reportar el grupo
+
+  // Reportar, sancionar y eliminar publicaciones: el hook lo resuelve igual que en el feed.
+  const { abrirMenu, modales } = useAccionesPublicacion({
+    onQuitada: (p) => setPublicaciones((actuales) => actuales.filter((x) => x.id_publicacion !== p.id_publicacion)),
+  });
 
   // Solo para mostrar u ocultar botones: el backend vuelve a validar cada acción.
   const gestiona = grupo?.mi_rol === "moderador" || grupo?.mi_rol === "colaborador";
-  const esAdmin = perfil.rol_plataforma === "administrador";
   const puedeVer = grupo !== null && (!grupo.ingreso_limitado || grupo.mi_rol !== null);
 
   const cargar = useCallback(async () => {
@@ -99,7 +94,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     ]);
   }
 
-    async function elegirImagenes() {
+  async function elegirImagenes() {
     const disponibles = 4 - imagenes.length;
     if (disponibles <= 0) return;
     const resultado = await ImagePicker.launchImageLibraryAsync({
@@ -116,7 +111,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     setImagenes((actuales) => actuales.filter((u) => u !== uri));
   }
 
-    async function publicar() {
+  async function publicar() {
     setPublicando(true);
     setError(null);
     try {
@@ -138,63 +133,22 @@ export default function GroupDetailScreen({ route, navigation }) {
     }
   }
 
-  function confirmarEliminar(publicacion) {
-    Alert.alert("Eliminar publicación", "Esta acción no se puede deshacer.", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Eliminar",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await eliminarPublicacion(token, idGrupo, publicacion.id_publicacion);
-            setPublicaciones((actuales) =>
-              actuales.filter((p) => p.id_publicacion !== publicacion.id_publicacion)
-            );
-          } catch (e) {
-            setError(e.message);
-          }
-        },
-      },
-    ]);
-  }
-
-    function opcionesPublicacion(publicacion) {
-    const esMia = publicacion.autor.id_perfil === perfil.id_perfil;
-    const botones = [];
-    // El administrador también puede eliminar publicaciones de grupos que no modera.
-    if (esMia || gestiona || esAdmin) {
-      botones.push({ text: "Eliminar", style: "destructive", onPress: () => confirmarEliminar(publicacion) });
+  // Opciones del ⋮ del header: las del grupo (las de cada publicación las maneja el hook).
+  function opcionesGrupo() {
+    const lista = [];
+    if (gestiona) {
+      lista.push({ texto: "Editar grupo", onPress: () => setEditando(true) });
     }
-    if (esAdmin && !esMia) {
-      // El administrador sanciona directo (Alert admite 3 botones en Android: por eso no se agrega "Reportar").
-      botones.push({
-        text: "Sancionar autor",
-        style: "destructive",
-        onPress: () => setObjetivoSancion({ id_publicacion: publicacion.id_publicacion }),
-      });
-    } else if (!esMia) {
-      botones.push({
-        text: "Reportar",
-        onPress: () => setObjetivoReporte({ id_publicacion: publicacion.id_publicacion }),
+    if (puedeVer) {
+      lista.push({
+        texto: gestiona ? "Gestionar miembros" : "Ver miembros",
+        onPress: () => navigation.navigate("MiembrosGrupo", { idGrupo }),
       });
     }
-    botones.push({ text: "Cancelar", style: "cancel" });
-    Alert.alert("Publicación", undefined, botones);
-  }
-
-  function irAMiembros() {
-    setMenuAbierto(false);
-    navigation.navigate("MiembrosGrupo", { idGrupo });
-  }
-
-  function abrirEdicion() {
-    setMenuAbierto(false);
-    setEditando(true);
-  }
-
-  function reportarGrupo() {
-    setMenuAbierto(false);
-    setObjetivoReporte({ id_grupo: idGrupo });
+    if (grupo.mi_rol !== "moderador") {
+      lista.push({ texto: "Reportar grupo", peligro: true, onPress: () => setObjetivoReporte({ id_grupo: idGrupo }) });
+    }
+    return lista;
   }
 
   function renderBotonMembresia() {
@@ -325,10 +279,11 @@ export default function GroupDetailScreen({ route, navigation }) {
           puedeVer && !cargando && <Text style={estilos.textoVacio}>Aún no hay publicaciones.</Text>
         }
         renderItem={({ item }) => (
-          <TarjetaPublicacion
+          <TarjetaFeed
             publicacion={item}
-            onOpciones={() => opcionesPublicacion(item)}
+            mostrarGrupo={false}
             interactivo={grupo.mi_rol !== null}
+            onOpciones={() => abrirMenu(item)}
             onAbrir={() =>
               navigation.navigate("DetallePublicacion", { idPublicacion: item.id_publicacion })
             }
@@ -337,34 +292,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       />
 
       {/* Menú del grupo, se abre con los 3 puntos del header */}
-      <Modal
-        visible={menuAbierto}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMenuAbierto(false)}
-      >
-        <Pressable style={estilos.fondoModal} onPress={() => setMenuAbierto(false)}>
-          <View style={estilos.menu}>
-            {gestiona && (
-              <Pressable style={estilos.opcionMenu} onPress={abrirEdicion}>
-                <Text style={estilos.textoOpcionMenu}>Editar grupo</Text>
-              </Pressable>
-            )}
-            {puedeVer && (
-              <Pressable style={estilos.opcionMenu} onPress={irAMiembros}>
-                <Text style={estilos.textoOpcionMenu}>
-                  {gestiona ? "Gestionar miembros" : "Ver miembros"}
-                </Text>
-              </Pressable>
-            )}
-            {grupo.mi_rol !== "moderador" && (
-              <Pressable style={estilos.opcionMenu} onPress={reportarGrupo}>
-                <Text style={[estilos.textoOpcionMenu, estilos.textoOpcionPeligro]}>Reportar grupo</Text>
-              </Pressable>
-            )}
-          </View>
-        </Pressable>
-      </Modal>
+      <MenuAcciones visible={menuAbierto} opciones={opcionesGrupo()} onCerrar={() => setMenuAbierto(false)} />
 
       <ModalEditarGrupo
         grupo={grupo}
@@ -378,40 +306,8 @@ export default function GroupDetailScreen({ route, navigation }) {
 
       <ReportarModal objetivo={objetivoReporte} onCerrar={() => setObjetivoReporte(null)} />
 
-      <SancionarModal objetivo={objetivoSancion} onCerrar={() => setObjetivoSancion(null)} onListo={cargar} />
-    </View>
-  );
-}
-
-function TarjetaPublicacion({ publicacion, onOpciones, onAbrir, interactivo }) {
-  const { autor } = publicacion;
-  return (
-    <View style={estilos.tarjeta}>
-      <View style={estilos.filaAutor}>
-        {autor.foto_perfil_url ? (
-          <Image source={{ uri: autor.foto_perfil_url }} style={estilos.foto} />
-        ) : (
-          <View style={[estilos.foto, estilos.fotoVacia]} />
-        )}
-        <View style={estilos.datosAutor}>
-          <Text style={estilos.nombreAutor}>{nombreParaMostrar(autor)}</Text>
-          <Text style={estilos.fecha}>{formatearFecha(publicacion.creado_en)}</Text>
-        </View>
-        <Pressable onPress={onOpciones} hitSlop={12} style={estilos.botonOpcionesPost}>
-          <Text style={estilos.textoOpcionesPost}>⋮</Text>
-        </Pressable>
-      </View>
-      <Pressable onPress={onAbrir}>
-        <Text style={estilos.contenido}>{publicacion.contenido}</Text>
-      </Pressable>
-
-      <ImagenesPublicacion imagenes={publicacion.imagenes} />
-      {/* Módulo Feeds: me gusta y comentarios (solo lectura si no soy miembro del grupo). */}
-      <AccionesPublicacion
-        publicacion={publicacion}
-        interactivo={interactivo}
-        onAbrirComentarios={onAbrir}
-      />
+      {/* Menú, reporte y sanción de las publicaciones */}
+      {modales}
     </View>
   );
 }
@@ -497,27 +393,16 @@ const estilos = StyleSheet.create({
   botonDeshabilitado: { opacity: 0.5 },
   cajaPublicar: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 8, padding: 12, gap: 8 },
   inputPublicar: { minHeight: 60, textAlignVertical: "top" },
+  filaMiniaturas: { gap: 8, paddingVertical: 4 },
+  miniatura: { width: 72, height: 72, borderRadius: 8 },
+  quitarMiniatura: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: "#111827", alignItems: "center", justifyContent: "center" },
+  textoQuitar: { color: "white", fontSize: 11 },
   filaPublicar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   contador: { fontSize: 12, color: "#9ca3af" },
   botonPublicar: { backgroundColor: "#2563eb", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
-  tarjeta: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 8, padding: 14, gap: 8 },
-  filaAutor: { flexDirection: "row", alignItems: "center", gap: 10 },
-  foto: { width: 36, height: 36, borderRadius: 18 },
-  fotoVacia: { backgroundColor: "#e5e7eb" },
-  datosAutor: { flex: 1 },
-  nombreAutor: { fontWeight: "600", color: "#111827" },
-  fecha: { fontSize: 12, color: "#9ca3af" },
-  botonOpcionesPost: { padding: 4 },
-  textoOpcionesPost: { fontSize: 20, color: "#6b7280" },
-  contenido: { fontSize: 15, color: "#111827" },
   textoVacio: { color: "#9ca3af", textAlign: "center", marginTop: 24 },
   error: { color: "red", textAlign: "center" },
   textoBotonOpciones: { fontSize: 24, fontWeight: "bold", color: "#374151", paddingHorizontal: 8 },
-  fondoModal: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)", justifyContent: "flex-start", alignItems: "flex-end" },
-  menu: { backgroundColor: "white", borderRadius: 8, marginTop: 70, marginRight: 16, minWidth: 200, elevation: 4 },
-  opcionMenu: { padding: 14 },
-  textoOpcionMenu: { fontSize: 15, color: "#111827" },
-  textoOpcionPeligro: { color: "#dc2626" },
   contenedorModal: { flexGrow: 1, padding: 24, gap: 12, paddingTop: 48 },
   tituloModal: { fontSize: 20, fontWeight: "bold", marginBottom: 8 },
   etiqueta: { fontSize: 14, color: "#374151" },

@@ -1,10 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
-import {
-  errorConStatus,
-  obtenerContextoGrupo,
-  puedeGestionar,
-  puedeVerPosts,
-} from "./grupoService.js";
+import { calcularRol, errorConStatus, obtenerContextoGrupo, puedeGestionar, puedeVerPosts } from "./grupoService.js";
 import { adjuntarImagenes } from "./imagenesService.js";
 
 
@@ -35,15 +30,62 @@ export function validarContenido(contenido) {
   return limpio;
 }
 
+// Qué puede hacer `usuario` con cada publicación. La app solo dibuja botones según esto;
+// cada endpoint vuelve a validar. Son 2 consultas extra, sin importar cuántas publicaciones haya.
+async function calcularPermisos(publicaciones, usuario) {
+  const admin = esAdministrador(usuario);
+  const idsGrupos = [...new Set(publicaciones.map((p) => p.id_grupo).filter(Boolean))];
+  const roles = new Map(); // id_grupo -> rol del usuario en ese grupo
+
+  if (idsGrupos.length > 0) {
+    const [grupos, membresias] = await Promise.all([
+      supabaseAdmin.from("grupo").select("id_grupo, id_perfil_creador").in("id_grupo", idsGrupos),
+      supabaseAdmin
+        .from("grupo_miembro")
+        .select("id_grupo, es_colaborador, estado")
+        .eq("id_perfil", usuario.id_perfil)
+        .in("id_grupo", idsGrupos),
+    ]);
+    if (grupos.error || membresias.error) {
+      console.error("calcularPermisos:", grupos.error ?? membresias.error);
+      throw errorConStatus("No se pudieron calcular los permisos", 500);
+    }
+    const miembro = new Map(membresias.data.map((m) => [m.id_grupo, m]));
+    for (const g of grupos.data) {
+      roles.set(g.id_grupo, calcularRol(g, miembro.get(g.id_grupo), usuario.id_perfil));
+    }
+  }
+
+  return new Map(
+    publicaciones.map((p) => {
+      const esMia = p.autor?.id_perfil === usuario.id_perfil;
+      if (p.tipo === "anuncio") {
+        // Los anuncios no se reportan (reportes.js solo acepta tipo 'grupo') ni se sanciona a su autor.
+        return [p.id_publicacion, { eliminar: admin, reportar: false, sancionar: false }];
+      }
+      const rol = roles.get(p.id_grupo) ?? null;
+      return [
+        p.id_publicacion,
+        {
+          eliminar: esMia || puedeGestionar(rol) || admin,
+          reportar: !esMia && !admin, // el administrador sanciona directo en vez de reportar
+          sancionar: admin && !esMia,
+        },
+      ];
+    })
+  );
+}
+
 /**
  * Agrega a cada publicación: cantidad_me_gusta, cantidad_comentarios (solo activos) y me_gusta_mio.
  * Hace 2 consultas en total, sin importar cuántas publicaciones haya (no es una por tarjeta).
  */
-export async function enriquecerPublicaciones(publicaciones, idPerfil) {
+export async function enriquecerPublicaciones(publicaciones, usuario) {
   if (publicaciones.length === 0) return [];
+  const idPerfil = usuario.id_perfil;
   const ids = publicaciones.map((p) => p.id_publicacion);
 
-  const [conteos, misLikes] = await Promise.all([
+  const [conteos, misLikes, permisos] = await Promise.all([
     // `tabla(count)` pide el conteo de filas relacionadas; el filtro con prefijo `comentario.`
     // aplica solo al embebido, así que cuenta únicamente comentarios activos.
     supabaseAdmin
@@ -56,6 +98,7 @@ export async function enriquecerPublicaciones(publicaciones, idPerfil) {
       .select("id_publicacion")
       .eq("id_perfil", idPerfil)
       .in("id_publicacion", ids),
+    calcularPermisos(publicaciones, usuario),
   ]);
 
   if (conteos.error || misLikes.error) {
@@ -76,6 +119,7 @@ export async function enriquecerPublicaciones(publicaciones, idPerfil) {
     cantidad_me_gusta: conteoPorId.get(p.id_publicacion)?.likes ?? 0,
     cantidad_comentarios: conteoPorId.get(p.id_publicacion)?.comentarios ?? 0,
     me_gusta_mio: mios.has(p.id_publicacion),
+    permisos: permisos.get(p.id_publicacion),
   }));
 
   return adjuntarImagenes(enriquecidas);

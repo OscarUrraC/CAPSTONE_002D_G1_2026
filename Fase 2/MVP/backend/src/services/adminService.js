@@ -81,6 +81,11 @@ export function agruparReportes(filas, { pendientes = true } = {}) {
     });
   }
 
+    // El orden de las filas depende del listado; "reportes[0]" siempre debe ser el más antiguo.
+  for (const caso of casos.values()) {
+    caso.reportes.sort((a, b) => a.creado_en.localeCompare(b.creado_en));
+  }
+
   const resultado = [...casos.values()].map((caso) => ({
     ...caso,
     cantidad_reportes: caso.reportes.length,

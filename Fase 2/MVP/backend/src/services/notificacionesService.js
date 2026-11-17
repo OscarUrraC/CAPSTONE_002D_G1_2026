@@ -174,13 +174,17 @@ export async function notificarMarcaEvento(evento, idPerfil, momentos) {
 }
 
 let vueltaEnCurso = false;
+let planificadorActivo = false;
 
 // Arranca la revisión periódica de recordatorios. Se puede apagar con NOTIF_PLANIFICADOR=off en el .env.
+// Es seguro llamarla más de una vez: solo arranca un temporizador.
 export function iniciarPlanificador() {
   if (process.env.NOTIF_PLANIFICADOR === "off") {
     console.log("Planificador de recordatorios desactivado (NOTIF_PLANIFICADOR=off)");
     return;
   }
+  if (planificadorActivo) return;
+  planificadorActivo = true;
 
   async function vuelta() {
     if (vueltaEnCurso) return; // no se solapan dos vueltas

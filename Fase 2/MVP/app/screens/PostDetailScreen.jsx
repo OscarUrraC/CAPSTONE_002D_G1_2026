@@ -27,10 +27,17 @@ import { formatearFecha, nombreParaMostrar } from "../utils/formato";
 import ImagenesPublicacion from "../components/PublicacionImagenes";
 import ReportarModal from "../components/ReportarModal";
 import SancionarModal from "../components/SancionarModal";
+import MenuAcciones from "../components/MenuAcciones";
+import useAccionesPublicacion from "../hooks/useAccionesPublicacion";
+
+// ¿Hay al menos una acción permitida? Si no, no se dibuja el ⋮.
+function hayAcciones(permisos) {
+  return !!permisos && (permisos.eliminar || permisos.reportar || permisos.sancionar);
+}
 
 // Pantalla de una publicación: el post, sus comentarios (con respuestas) y la caja para comentar.
 // Se abre desde el feed Para Ti y desde el detalle de un grupo (ruta "DetallePublicacion").
-export default function PostDetailScreen({ route }) {
+export default function PostDetailScreen({ route, navigation }) {
   const { idPublicacion } = route.params;
   const { token } = useAuth();
 
@@ -43,11 +50,19 @@ export default function PostDetailScreen({ route }) {
   const [objetivo, setObjetivo] = useState(null); // { id_comentario, nombre } si estoy respondiendo
   const [enviando, setEnviando] = useState(false);
   const [abiertos, setAbiertos] = useState({}); // id del comentario -> respuestas desplegadas
+  const [menuComentario, setMenuComentario] = useState({ visible: false, comentario: null });
   const [objetivoReporte, setObjetivoReporte] = useState(null); // { id_comentario } si estoy reportando
   const [objetivoSancion, setObjetivoSancion] = useState(null); // { id_comentario } si estoy sancionando
   const input = useRef(null);
   // Alto real de la cabecera: el KeyboardAvoidingView lo necesita para calcular cuánto subir la caja.
   const alturaCabecera = useHeaderHeight();
+
+  // Acciones sobre la publicación mostrada. Si se elimina o sanciona, ya no hay nada que ver aquí.
+  const { abrirMenu: abrirMenuPublicacion, modales } = useAccionesPublicacion({
+    onQuitada: (p) => {
+      if (p.id_publicacion === idPublicacion) navigation.goBack();
+    },
+  });
 
   // Recarga los comentarios y avisa a las demás pantallas el nuevo total (para el contador 💬).
   const cargarComentarios = useCallback(async () => {
@@ -119,6 +134,23 @@ export default function PostDetailScreen({ route }) {
     ]);
   }
 
+  // Opciones del ⋮ de un comentario. Qué aparece lo decide el backend (comentario.permisos).
+  function opcionesComentario(c) {
+    if (!c) return [];
+    const permisos = c.permisos ?? {};
+    const lista = [];
+    if (permisos.reportar) {
+      lista.push({ texto: "Reportar comentario", onPress: () => setObjetivoReporte({ id_comentario: c.id_comentario }) });
+    }
+    if (permisos.sancionar) {
+      lista.push({ texto: "Sancionar al autor", peligro: true, onPress: () => setObjetivoSancion({ id_comentario: c.id_comentario }) });
+    }
+    if (permisos.eliminar) {
+      lista.push({ texto: "Eliminar comentario", peligro: true, onPress: () => confirmarEliminar(c) });
+    }
+    return lista;
+  }
+
   if (!publicacion) {
     return (
       <View style={estilos.centrado}>
@@ -153,7 +185,9 @@ export default function PostDetailScreen({ route }) {
         onRefresh={cargarTodo}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={estilos.lista}
-        ListHeaderComponent={<CabeceraPublicacion publicacion={publicacion} />}
+        ListHeaderComponent={
+          <CabeceraPublicacion publicacion={publicacion} onOpciones={() => abrirMenuPublicacion(publicacion)} />
+        }
         ListEmptyComponent={
           !cargando && <Text style={estilos.textoVacio}>Aún no hay comentarios. ¡Sé el primero!</Text>
         }
@@ -164,9 +198,7 @@ export default function PostDetailScreen({ route }) {
             alternar={() => setAbiertos((a) => ({ ...a, [item.id_comentario]: !a[item.id_comentario] }))}
             puedeInteractuar={puedeComentar}
             onResponder={responder}
-            onEliminar={confirmarEliminar}
-            onReportar={(c) => setObjetivoReporte({ id_comentario: c.id_comentario })}
-            onSancionar={(c) => setObjetivoSancion({ id_comentario: c.id_comentario })}
+            onOpciones={(c) => setMenuComentario({ visible: true, comentario: c })}
           />
         )}
       />
@@ -209,18 +241,27 @@ export default function PostDetailScreen({ route }) {
       ) : (
         <Text style={estilos.avisoSoloLectura}>Únete al grupo para dar me gusta y comentar.</Text>
       )}
-      <ReportarModal objetivo={objetivoReporte} onCerrar={() => setObjetivoReporte(null)} />
 
+      {/* Menú de un comentario */}
+      <MenuAcciones
+        visible={menuComentario.visible}
+        opciones={opcionesComentario(menuComentario.comentario)}
+        onCerrar={() => setMenuComentario((m) => ({ ...m, visible: false }))}
+      />
+      <ReportarModal objetivo={objetivoReporte} onCerrar={() => setObjetivoReporte(null)} />
       <SancionarModal
         objetivo={objetivoSancion}
         onCerrar={() => setObjetivoSancion(null)}
         onListo={cargarComentarios}
       />
+
+      {/* Menú, reporte y sanción de la publicación */}
+      {modales}
     </KeyboardAvoidingView>
   );
 }
 
-function Autor({ autor, fecha, pequeno }) {
+function Autor({ autor, fecha, pequeno, onOpciones }) {
   const tam = pequeno ? 28 : 36;
   return (
     <View style={estilos.filaAutor}>
@@ -233,15 +274,24 @@ function Autor({ autor, fecha, pequeno }) {
         <Text style={estilos.nombreAutor}>{nombreParaMostrar(autor)}</Text>
         <Text style={estilos.fecha}>{formatearFecha(fecha)}</Text>
       </View>
+      {onOpciones && (
+        <Pressable onPress={onOpciones} hitSlop={12} style={estilos.botonOpciones}>
+          <Text style={estilos.textoOpciones}>⋮</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
-function CabeceraPublicacion({ publicacion }) {
+function CabeceraPublicacion({ publicacion, onOpciones }) {
   return (
     <View style={estilos.cabecera}>
       {publicacion.grupo && <Text style={estilos.grupo}>en {publicacion.grupo.nombre}</Text>}
-      <Autor autor={publicacion.autor} fecha={publicacion.creado_en} />
+      <Autor
+        autor={publicacion.autor}
+        fecha={publicacion.creado_en}
+        onOpciones={hayAcciones(publicacion.permisos) ? onOpciones : undefined}
+      />
       <Text style={estilos.contenidoPost}>{publicacion.contenido}</Text>
       <ImagenesPublicacion imagenes={publicacion.imagenes} />
       <AccionesPublicacion publicacion={publicacion} interactivo={publicacion.puede_interactuar} />
@@ -251,7 +301,7 @@ function CabeceraPublicacion({ publicacion }) {
 }
 
 // Un comentario de primer nivel + sus respuestas (desplegables).
-function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onResponder, onEliminar, onReportar, onSancionar }) {
+function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onResponder, onOpciones }) {
   const respuestas = comentario.respuestas ?? [];
 
   return (
@@ -260,9 +310,7 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
         comentario={comentario}
         puedeInteractuar={puedeInteractuar}
         onResponder={() => onResponder(comentario, comentario.id_comentario)}
-        onEliminar={() => onEliminar(comentario)}
-        onReportar={() => onReportar(comentario)}
-        onSancionar={() => onSancionar(comentario)}
+        onOpciones={() => onOpciones(comentario)}
       />
 
       {respuestas.length > 0 && (
@@ -284,9 +332,7 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
               pequeno
               puedeInteractuar={puedeInteractuar}
               onResponder={() => onResponder(r, comentario.id_comentario)}
-              onEliminar={() => onEliminar(r)}
-              onReportar={() => onReportar(r)}
-              onSancionar={() => onSancionar(r)}
+              onOpciones={() => onOpciones(r)}
             />
           ))}
         </View>
@@ -294,21 +340,21 @@ function HiloComentario({ comentario, abierto, alternar, puedeInteractuar, onRes
     </View>
   );
 }
-function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onEliminar, onReportar, onSancionar }) {
-  // El hook va antes del return anticipado: las reglas de hooks exigen llamarlo siempre.
-  const { perfil } = useAuth();
 
+function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onOpciones }) {
   // Comentario eliminado que se conserva solo porque tiene respuestas: no muestra contenido ni autor.
   if (comentario.eliminado) {
     return <Text style={estilos.eliminado}>Comentario eliminado</Text>;
   }
 
-  const esMio = comentario.autor?.id_perfil === perfil?.id_perfil;
-  const esAdmin = perfil?.rol_plataforma === "administrador";
-
   return (
     <View style={estilos.comentario}>
-      <Autor autor={comentario.autor} fecha={comentario.creado_en} pequeno={pequeno} />
+      <Autor
+        autor={comentario.autor}
+        fecha={comentario.creado_en}
+        pequeno={pequeno}
+        onOpciones={hayAcciones(comentario.permisos) ? onOpciones : undefined}
+      />
       <Text style={estilos.contenido}>
         {comentario.en_respuesta_a && (
           <Text style={estilos.mencion}>@{nombreParaMostrar(comentario.en_respuesta_a)} </Text>
@@ -321,21 +367,6 @@ function Comentario({ comentario, pequeno, puedeInteractuar, onResponder, onElim
         {puedeInteractuar && (
           <Pressable onPress={onResponder} hitSlop={8}>
             <Text style={estilos.accion}>Responder</Text>
-          </Pressable>
-        )}
-        {comentario.puede_eliminar && (
-          <Pressable onPress={onEliminar} hitSlop={8}>
-            <Text style={[estilos.accion, estilos.accionPeligro]}>Eliminar</Text>
-          </Pressable>
-        )}
-        {!esMio && (
-          <Pressable onPress={onReportar} hitSlop={8}>
-            <Text style={estilos.accion}>Reportar</Text>
-          </Pressable>
-        )}
-        {esAdmin && !esMio && (
-          <Pressable onPress={onSancionar} hitSlop={8}>
-            <Text style={[estilos.accion, estilos.accionPeligro]}>Sancionar</Text>
           </Pressable>
         )}
       </View>
@@ -399,6 +430,8 @@ const estilos = StyleSheet.create({
   datosAutor: { flex: 1 },
   nombreAutor: { fontWeight: "600", color: "#111827" },
   fecha: { fontSize: 12, color: "#9ca3af" },
+  botonOpciones: { padding: 4 },
+  textoOpciones: { fontSize: 20, color: "#6b7280" },
   hilo: { gap: 6 },
   comentario: { gap: 6 },
   contenido: { fontSize: 15, color: "#111827" },
@@ -406,7 +439,6 @@ const estilos = StyleSheet.create({
   filaAcciones: { flexDirection: "row", gap: 18, alignItems: "center" },
   accion: { fontSize: 13, color: "#6b7280" },
   accionActiva: { color: "#dc2626", fontWeight: "600" },
-  accionPeligro: { color: "#dc2626" },
   eliminado: { fontSize: 14, color: "#9ca3af", fontStyle: "italic" },
   verRespuestas: { alignSelf: "flex-start", paddingVertical: 2 },
   textoVerRespuestas: { fontSize: 13, color: "#2563eb", fontWeight: "600" },

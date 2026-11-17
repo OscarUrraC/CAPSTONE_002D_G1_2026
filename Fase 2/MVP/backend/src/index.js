@@ -16,7 +16,6 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-iniciarPlanificador();
 app.use("/auth", authRouter);
 app.use("/notificaciones", notificacionesRouter);
 app.use("/perfil", perfilRouter);

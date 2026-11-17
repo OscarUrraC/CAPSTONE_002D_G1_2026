@@ -3,15 +3,17 @@ import AccionesPublicacion from "./AccionesPublicacion";
 import { formatearFecha, nombreParaMostrar } from "../utils/formato";
 import ImagenesPublicacion from "./PublicacionImagenes";
 
-// Publicación dentro del feed Para Ti: muestra de qué grupo viene (el feed mezcla varios).
+// Publicación dentro de un feed o lista.
 // onAbrir: abre la pantalla de comentarios. onAbrirGrupo: abre el detalle del grupo.
-// onEliminar (opcional): si llega, se muestra "Eliminar anuncio" (solo lo pasa el feed Anuncios a administradores).
-export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo, onEliminar }) {
-  const { autor, grupo } = publicacion;
+// onOpciones: abre el menú de acciones (el ⋮ solo se muestra si hay alguna acción permitida).
+// mostrarGrupo: false cuando la lista ya es de un solo grupo y repetir "en <grupo>" sobra.
+export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo, onOpciones, mostrarGrupo = true, interactivo = true }) {
+  const { autor, grupo, permisos } = publicacion;
+  const hayAcciones = !!permisos && (permisos.eliminar || permisos.reportar || permisos.sancionar);
 
   return (
     <View style={estilos.tarjeta}>
-      {grupo && (
+      {mostrarGrupo && grupo && (
         <Pressable onPress={onAbrirGrupo} hitSlop={6}>
           <Text style={estilos.grupo}>en {grupo.nombre}</Text>
         </Pressable>
@@ -27,6 +29,11 @@ export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo, onElim
           <Text style={estilos.nombreAutor}>{nombreParaMostrar(autor)}</Text>
           <Text style={estilos.fecha}>{formatearFecha(publicacion.creado_en)}</Text>
         </View>
+        {onOpciones && hayAcciones && (
+          <Pressable onPress={onOpciones} hitSlop={12} style={estilos.botonOpciones}>
+            <Text style={estilos.textoOpciones}>⋮</Text>
+          </Pressable>
+        )}
       </View>
 
       <Pressable onPress={onAbrir}>
@@ -34,14 +41,7 @@ export default function TarjetaFeed({ publicacion, onAbrir, onAbrirGrupo, onElim
       </Pressable>
 
       <ImagenesPublicacion imagenes={publicacion.imagenes} />
-      {/* Dentro del feed siempre soy miembro del grupo, por eso es interactivo. */}
-      <AccionesPublicacion publicacion={publicacion} interactivo onAbrirComentarios={onAbrir} />
-
-      {onEliminar && (
-        <Pressable onPress={onEliminar} hitSlop={6}>
-          <Text style={estilos.eliminar}>Eliminar anuncio</Text>
-        </Pressable>
-      )}
+      <AccionesPublicacion publicacion={publicacion} interactivo={interactivo} onAbrirComentarios={onAbrir} />
     </View>
   );
 }
@@ -55,6 +55,7 @@ const estilos = StyleSheet.create({
   datosAutor: { flex: 1 },
   nombreAutor: { fontWeight: "600", color: "#111827" },
   fecha: { fontSize: 12, color: "#9ca3af" },
+  botonOpciones: { padding: 4 },
+  textoOpciones: { fontSize: 20, color: "#6b7280" },
   contenido: { fontSize: 15, color: "#111827" },
-  eliminar: { fontSize: 13, color: "#dc2626", fontWeight: "600" },
 });

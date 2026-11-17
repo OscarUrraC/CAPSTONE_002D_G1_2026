@@ -24,7 +24,7 @@ function aVistaActiva(fila, porId) {
     autor: fila.autor,
     cantidad_me_gusta: fila.cantidad_me_gusta,
     me_gusta_mio: fila.me_gusta_mio,
-    puede_eliminar: fila.puede_eliminar,
+    permisos: fila.permisos,
     en_respuesta_a: respondeAOtraRespuesta ? padre.autor : null,
     eliminado: false,
   };

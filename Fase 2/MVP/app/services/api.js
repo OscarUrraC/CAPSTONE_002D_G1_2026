@@ -302,6 +302,15 @@ export function obtenerFeedParaTi(token, { antes, limite } = {}) {
   return peticion(token, `/feed/para-ti${query}`, { mensajeError: "Error al obtener tu feed" });
 }
 
+// GET /perfil/me/publicaciones?limite=&antes=  ->  { publicaciones, siguiente }
+export function obtenerMisPublicaciones(token, { antes, limite } = {}) {
+  const params = new URLSearchParams();
+  if (antes) params.append("antes", antes);
+  if (limite) params.append("limite", String(limite));
+  const query = params.toString() ? `?${params}` : "";
+  return peticion(token, `/perfil/me/publicaciones${query}`, { mensajeError: "Error al obtener tus publicaciones" });
+}
+
 export function obtenerPublicacion(token, idPublicacion) {
   return peticion(token, `/publicaciones/${idPublicacion}`, { mensajeError: "Error al obtener la publicación" });
 }

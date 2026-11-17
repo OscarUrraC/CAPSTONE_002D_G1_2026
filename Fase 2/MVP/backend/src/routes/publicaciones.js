@@ -15,6 +15,7 @@ const SELECT_COMENTARIO = `id_comentario, id_comentario_padre, id_comentario_rai
 
 // Fila de la BD -> fila plana que entiende armarArbolComentarios.
 function aFilaComentario(fila, { idPerfil, misLikes, puedeModerar, esAdmin }) {
+  const esMio = fila.id_perfil_autor === idPerfil;
   return {
     id_comentario: fila.id_comentario,
     id_comentario_padre: fila.id_comentario_padre,
@@ -25,8 +26,12 @@ function aFilaComentario(fila, { idPerfil, misLikes, puedeModerar, esAdmin }) {
     autor: fila.autor,
     cantidad_me_gusta: fila.comentario_me_gusta?.[0]?.count ?? 0,
     me_gusta_mio: misLikes.has(fila.id_comentario),
-    // Solo para mostrar/ocultar el botón: DELETE /comentarios/:id vuelve a validar.
-    puede_eliminar: fila.id_perfil_autor === idPerfil || puedeModerar || esAdmin,
+    // Solo para mostrar/ocultar opciones: cada endpoint vuelve a validar.
+    permisos: {
+      eliminar: esMio || puedeModerar || esAdmin,
+      reportar: !esMio && !esAdmin, // el administrador sanciona directo en vez de reportar
+      sancionar: esAdmin && !esMio,
+    },
   };
 }
 
@@ -37,7 +42,7 @@ publicacionesRouter.get("/:id", requireAuth, async (req, res) => {
       req.params.id,
       req.usuario
     );
-    const [enriquecida] = await enriquecerPublicaciones([publicacion], req.usuario.id_perfil);
+    const [enriquecida] = await enriquecerPublicaciones([publicacion], req.usuario);
     res.json({ ...enriquecida, mi_rol: rol, puede_interactuar: puedeInteractuar });
   } catch (error) {
     responderError(res, error);
@@ -231,7 +236,7 @@ publicacionesRouter.post("/:id/comentarios", requireAuth, requireCuentaActiva, a
       autor: creado.autor,
       cantidad_me_gusta: 0,
       me_gusta_mio: false,
-      puede_eliminar: true,
+      permisos: { eliminar: true, reportar: false, sancionar: false },
       en_respuesta_a: null,
       eliminado: false,
     });

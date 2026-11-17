@@ -415,8 +415,9 @@ gruposRouter.get("/:id/publicaciones", requireAuth, async (req, res) => {
 
     if (error) throw errorConStatus("No se pudieron obtener las publicaciones", 500);
 
-    // Módulo Feeds: agrega cantidad_me_gusta, cantidad_comentarios y me_gusta_mio a cada publicación.
-    res.json(await enriquecerPublicaciones(data, req.usuario.id_perfil));
+    // Módulo Feeds: agrega cantidad_me_gusta, cantidad_comentarios, me_gusta_mio y permisos a cada publicación.
+    // Se pasa el usuario completo (no solo el id): calcularPermisos necesita también su rol de plataforma.
+    res.json(await enriquecerPublicaciones(data, req.usuario));
   } catch (error) {
     responderError(res, error);
   }

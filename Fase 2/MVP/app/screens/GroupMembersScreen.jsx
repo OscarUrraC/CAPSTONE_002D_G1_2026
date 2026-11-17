@@ -19,6 +19,7 @@ import {
   cambiarRango,
 } from "../services/api";
 import { nombreParaMostrar } from "./GroupDetailScreen";
+import MenuAcciones from "../components/MenuAcciones";
 
 const ETIQUETA_ROL = { moderador: "Moderador", colaborador: "Colaborador" };
 
@@ -30,6 +31,8 @@ export default function GroupMembersScreen({ route }) {
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(null); // id_perfil con una acción en curso
   const [error, setError] = useState(null);
+  // visible y miembro van separados: al cerrar, la lista no se vacía mientras baja la animación.
+  const [menu, setMenu] = useState({ visible: false, miembro: null });
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -93,22 +96,23 @@ export default function GroupMembersScreen({ route }) {
     ]);
   }
 
+  // Opciones del ⋮ de un miembro, en el formato de MenuAcciones.
   function opcionesMiembro(miembro) {
+    if (!miembro) return [];
     const nombre = nombreParaMostrar(miembro.perfil);
-    const botones = [];
+    const lista = [];
     // Solo el moderador otorga o quita rangos.
     if (miRol === "moderador") {
-      botones.push({
-        text: miembro.es_colaborador ? "Quitar rango de colaborador" : "Hacer colaborador",
+      lista.push({
+        texto: miembro.es_colaborador ? "Quitar rango de colaborador" : "Hacer colaborador",
         onPress: () =>
           ejecutar(miembro.id_perfil, () =>
             cambiarRango(token, idGrupo, miembro.id_perfil, !miembro.es_colaborador)
           ),
       });
     }
-    botones.push({ text: "Expulsar", style: "destructive", onPress: () => confirmarExpulsion(miembro, nombre) });
-    botones.push({ text: "Cancelar", style: "cancel" });
-    Alert.alert(nombre, undefined, botones);
+    lista.push({ texto: "Expulsar", peligro: true, onPress: () => confirmarExpulsion(miembro, nombre) });
+    return lista;
   }
 
   const secciones = [
@@ -144,7 +148,11 @@ export default function GroupMembersScreen({ route }) {
 
     if (gestiona && tieneAcciones(item)) {
       return (
-        <Pressable onPress={() => opcionesMiembro(item)} hitSlop={12} style={estilos.botonOpciones}>
+        <Pressable
+          onPress={() => setMenu({ visible: true, miembro: item })}
+          hitSlop={12}
+          style={estilos.botonOpciones}
+        >
           <Text style={estilos.textoOpciones}>⋮</Text>
         </Pressable>
       );
@@ -187,6 +195,12 @@ export default function GroupMembersScreen({ route }) {
             </View>
           );
         }}
+      />
+
+      <MenuAcciones
+        visible={menu.visible}
+        opciones={opcionesMiembro(menu.miembro)}
+        onCerrar={() => setMenu((m) => ({ ...m, visible: false }))}
       />
     </View>
   );

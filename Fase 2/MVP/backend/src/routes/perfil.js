@@ -2,6 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { requireAuth, requireCuentaActiva } from "../middleware/auth.js";
 import { supabaseAdmin } from "../config/supabase.js";
+import { SELECT_AUTOR, enriquecerPublicaciones, responderError } from "../services/feedService.js";
+import { errorConStatus } from "../services/grupoService.js";
 
 export const perfilRouter = Router();
 
@@ -26,6 +28,72 @@ perfilRouter.get("/me", requireAuth, requireCuentaActiva, async (req, res) => {
   }
 
   res.json(perfil);
+});
+
+const LIMITE_POR_DEFECTO = 20;
+const LIMITE_MAXIMO = 50;
+
+// Se pide el estado y el tipo de ingreso del grupo para decidir en JS qué publicaciones se pueden mostrar.
+const SELECT_PUBLICACION_PERFIL = `id_publicacion, id_grupo, tipo, contenido, creado_en, autor:id_perfil_autor(${SELECT_AUTOR}), grupo:id_grupo(id_grupo, nombre, categoria, estado, ingreso_limitado)`;
+
+// GET /perfil/me/publicaciones?limite=20&antes=<creado_en de la última publicación recibida>
+//
+// Mis publicaciones en grupos, de más nueva a más antigua (paginación por cursor, igual que los feeds).
+// Misma regla de visibilidad que obtenerPublicacionVisible: el grupo debe estar activo y, si es de
+// ingreso limitado, debo seguir siendo miembro activo. Los anuncios no se incluyen.
+perfilRouter.get("/me/publicaciones", requireAuth, async (req, res) => {
+  try {
+    const idPerfil = req.usuario.id_perfil;
+
+    const limite = Math.min(
+      Math.max(parseInt(req.query.limite, 10) || LIMITE_POR_DEFECTO, 1),
+      LIMITE_MAXIMO
+    );
+
+    const { antes } = req.query;
+    if (antes !== undefined && (typeof antes !== "string" || Number.isNaN(Date.parse(antes)))) {
+      throw errorConStatus("antes debe ser una fecha válida (el creado_en de la última publicación)", 400);
+    }
+
+    const { data: membresias, error: errorMembresias } = await supabaseAdmin
+      .from("grupo_miembro")
+      .select("id_grupo")
+      .eq("id_perfil", idPerfil)
+      .eq("estado", "activo");
+    if (errorMembresias) throw errorConStatus("No se pudieron obtener tus grupos", 500);
+    const misGrupos = new Set(membresias.map((m) => m.id_grupo));
+
+    let consulta = supabaseAdmin
+      .from("publicacion")
+      .select(SELECT_PUBLICACION_PERFIL)
+      .eq("id_perfil_autor", idPerfil)
+      .eq("tipo", "grupo")
+      .eq("estado", "activa")
+      .order("creado_en", { ascending: false })
+      .limit(limite);
+    if (antes) consulta = consulta.lt("creado_en", antes);
+
+    const { data, error } = await consulta;
+    if (error) {
+      console.error("perfil publicaciones:", error);
+      throw errorConStatus("No se pudieron obtener tus publicaciones", 500);
+    }
+
+    const visibles = data.filter(
+      (p) => p.grupo?.estado === "activo" && (!p.grupo.ingreso_limitado || misGrupos.has(p.id_grupo))
+    );
+    const enriquecidas = await enriquecerPublicaciones(visibles, req.usuario);
+
+    // puede_interactuar: en un grupo abierto que dejé puedo ver mi publicación pero no dar me gusta.
+    const publicaciones = enriquecidas.map((p) => ({ ...p, puede_interactuar: misGrupos.has(p.id_grupo) }));
+
+    // El cursor sale de la página sin filtrar: una página con ocultas igual puede tener más detrás.
+    const siguiente = data.length === limite ? data[data.length - 1].creado_en : null;
+
+    res.json({ publicaciones, siguiente });
+  } catch (error) {
+    responderError(res, error);
+  }
 });
 
 // PATCH /perfil/me { apodo, mostrar_apodo }

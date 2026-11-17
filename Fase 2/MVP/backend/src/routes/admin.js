@@ -27,7 +27,11 @@ adminRouter.get("/reportes", async (req, res) => {
     let consulta = supabaseAdmin.from("reporte").select(SELECT_REPORTE);
     consulta = pendientes ? consulta.eq("estado", "pendiente") : consulta.neq("estado", "pendiente");
 
-    const { data, error } = await consulta.order("creado_en", { ascending: true }).limit(LIMITE_FILAS);
+    // Pendientes: los más antiguos primero (se atienden en orden). Resueltos: los últimos resueltos primero,
+    // para que el tope de filas descarte los más viejos y no los más recientes.
+    const { data, error } = await consulta
+      .order(pendientes ? "creado_en" : "resuelto_en", { ascending: pendientes })
+      .limit(LIMITE_FILAS);
     if (error) {
       console.error("admin/listar reportes:", error);
       throw errorConStatus("No se pudieron obtener los reportes", 500);
