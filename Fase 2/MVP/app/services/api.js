@@ -1,16 +1,21 @@
-import { API_URL } from "../config";
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+if (!API_URL) throw new Error("Falta EXPO_PUBLIC_API_URL (ver app/.env.example)");
 import { File, Paths } from "expo-file-system";
 import { fetch as fetchExpo } from "expo/fetch";
 
 export async function obtenerPerfil(token) {
+  // Si el fetch falla por red, lanza un TypeError sin `status`: quien llama lo distingue de un 401.
   const respuesta = await fetch(`${API_URL}/perfil/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const data = await respuesta.json();
+  const data = await respuesta.json().catch(() => null);
   if (!respuesta.ok) {
-    throw new Error(data.error ?? "Error al obtener el perfil");
+    const error = new Error(data?.error ?? "Error al obtener el perfil");
+    error.status = respuesta.status;
+    throw error;
   }
+  if (data === null) throw new Error("Respuesta inesperada del servidor");
   return data;
 }
 

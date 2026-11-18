@@ -3,9 +3,10 @@ import { NavigationContainer } from "@react-navigation/native";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import AuthStack from "./navigation/AuthStack";
 import RootTabs from "./navigation/RootTabs";
+import CommunityIntroScreen from "./screens/CommunityIntroScreen";
 
 function Contenido() {
-  const { token, perfil, verificandoSesion } = useAuth();
+  const { token, perfil, verificandoSesion, introPendiente, completarIntroduccion } = useAuth();
 
   if (verificandoSesion) {
     return (
@@ -17,6 +18,10 @@ function Contenido() {
 
   if (!token || !perfil) {
     return <AuthStack />;
+  }
+
+  if (introPendiente) {
+    return <CommunityIntroScreen onContinuar={completarIntroduccion} />;
   }
 
   return <RootTabs />;

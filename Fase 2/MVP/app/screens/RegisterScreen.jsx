@@ -131,7 +131,7 @@ export default function RegisterScreen() {
         id_carrera: valores.idCarrera,
         semestre: Number(valores.semestre),
       });
-      await iniciarSesion(token, perfil);
+      await iniciarSesion(token, perfil, { esRegistro: true });
     } catch (e) {
       setErrorGeneral(e.message);
     } finally {

@@ -9,7 +9,9 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_API_URL": "https://REEMPLAZAR-POR-LA-URL-HTTPS-DEL-BACKEND" }
     },
     "production": {
       "autoIncrement": true

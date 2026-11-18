@@ -68,8 +68,9 @@ export default function ProfileScreen({ navigation }) {
     }, [cargarInicial])
   );
 
-  const opcionesMenu = [
+    const opcionesMenu = [
     { texto: "Editar perfil", onPress: () => navigation.navigate("EditarPerfil") },
+    { texto: "Normas de la comunidad", onPress: () => navigation.navigate("Normas") },
     { texto: "Cerrar sesión", peligro: true, onPress: cerrarSesion },
   ];
 

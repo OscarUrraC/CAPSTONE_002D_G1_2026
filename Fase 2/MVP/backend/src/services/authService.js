@@ -115,8 +115,8 @@ export async function registrar(body) {
   if (errorCarrera) throw crearError(500, "No se pudo validar la carrera");
   if (!carrera) throw crearError(400, "La carrera seleccionada no existe");
 
-  // Paso 1: usuario de autenticación, ya confirmado (la verificación por correo
-  // se decidió no hacerla por ahora; con Google Sign-In la hará Google).
+   // Paso 1: usuario de autenticación, ya confirmado. No se verifica la propiedad del correo
+  // institucional: el registro solo valida que termine en @duocuc.cl.
   const { data: creado, error: errorAuth } = await supabaseAdmin.auth.admin.createUser({
     email: datos.correo,
     password: datos.password,

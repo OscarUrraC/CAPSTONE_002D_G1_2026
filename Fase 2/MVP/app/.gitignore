@@ -40,5 +40,14 @@ yarn-error.*
 /ios
 /android
 
+# keys and credentials
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+credentials.json
+
+
 # otros
 config.js

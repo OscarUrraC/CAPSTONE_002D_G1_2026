@@ -1,0 +1,11 @@
+services:
+  backend:
+    build: ./backend
+    container_name: connectboard-backend
+    env_file: ./backend/.env
+    environment:
+      # Pisa el PORT del .env: así el puerto de dentro del contenedor siempre coincide con el publicado.
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
