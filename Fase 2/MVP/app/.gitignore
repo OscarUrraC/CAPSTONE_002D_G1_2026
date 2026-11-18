@@ -48,6 +48,9 @@ yarn-error.*
 *.mobileprovision
 credentials.json
 
+# Carpetas nativas generadas por "expo prebuild"
+app/android/
+app/ios/
 
 # otros
 config.js
