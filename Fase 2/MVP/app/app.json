@@ -10,6 +10,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "cl.connectboard.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -23,7 +25,14 @@
     "plugins": [
       "expo-secure-store",
       "@react-native-community/datetimepicker",
-      "expo-sharing"
-    ]
+      "expo-sharing",
+      "expo-notifications",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1db348bd-14f6-4b0c-a993-43cbe80c4147"
+      }
+    }
   }
 }
