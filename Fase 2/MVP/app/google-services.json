@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "249870770195",
+    "project_id": "connectboard-1a4b6",
+    "storage_bucket": "connectboard-1a4b6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:249870770195:android:db4c745883c4197284dfe6",
+        "android_client_info": {
+          "package_name": "cl.connectboard.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCg7cQuucgescBIjZCAoiftsrwTl8HWFDk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

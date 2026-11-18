@@ -22,5 +22,4 @@ backend/npm-debug.log*
 !.env.example
 
 # Credenciales de Firebase/FCM para el push (el repositorio es publico)
-google-services.json
 *-firebase-adminsdk-*.json
