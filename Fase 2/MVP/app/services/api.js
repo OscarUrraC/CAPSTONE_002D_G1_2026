@@ -67,6 +67,8 @@ async function peticion(token, ruta, { method = "GET", body, mensajeError }) {
   } catch {
     throw new Error("No se pudo conectar con el servidor. Revisa tu conexión y la IP en config.js");
   }
+  // 204 = éxito sin cuerpo (por ejemplo POST/DELETE /dispositivos): no hay JSON que leer.
+  if (respuesta.status === 204) return null;
 
   // Si el servidor responde algo que no es JSON (por ejemplo la página "Cannot GET ..." de Express
   // cuando la ruta no existe o el backend no se reinició), se avisa con un mensaje claro.

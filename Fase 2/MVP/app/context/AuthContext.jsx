@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import * as SecureStore from "expo-secure-store";
 import { obtenerPerfil } from "../services/api";
 import { guardarCuenta } from "../services/cuentas";
+import { registrarPush, desregistrarPush } from "../services/notificacionesPush";
 
 const CLAVE_TOKEN = "connectboard_token";
 const AuthContext = createContext(null);
@@ -19,6 +20,7 @@ export function AuthProvider({ children }) {
           const perfilRecuperado = await obtenerPerfil(tokenGuardado);
           setToken(tokenGuardado);
           setPerfil(perfilRecuperado);
+          registrarPush(tokenGuardado); // sin await: no debe retrasar la apertura de la app
         } catch {
           await SecureStore.deleteItemAsync(CLAVE_TOKEN);
         }
@@ -52,7 +54,9 @@ export function AuthProvider({ children }) {
     setPerfil(perfilCompleto);
   }
 
-  async function cerrarSesion() {
+    async function cerrarSesion() {
+    // Se desregistra primero: la ruta exige la sesión que se está cerrando.
+    if (token) await desregistrarPush(token);
     // Borra solo el token activo; las cuentas guardadas para cambio rápido se conservan.
     await SecureStore.deleteItemAsync(CLAVE_TOKEN);
     setToken(null);

@@ -56,6 +56,7 @@ export async function obtenerDatosInforme(idSancion) {
       .maybeSingle();
 
     if (principal) {
+      const esComentario = Boolean(principal.id_comentario);
       const columna = esComentario ? "id_comentario" : "id_publicacion";
       const { data: filas, error: errorReportes } = await supabaseAdmin
         .from("reporte")

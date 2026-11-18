@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "../config/supabase.js";
+import { enviarPushPendientes } from "./pushService.js";
 
 const HORA_MS = 60 * 60 * 1000;
 const MINUTO_MS = 60 * 1000;
@@ -192,7 +193,10 @@ export function iniciarPlanificador() {
     try {
       const creadas = await procesarRecordatorios();
       if (creadas > 0) console.log(`Recordatorios: ${creadas} notificación(es) creada(s)`);
-    } catch (error) {
+            const enviadas = await enviarPushPendientes();
+      if (enviadas > 0) console.log(`Push: ${enviadas} notificación(es) enviada(s)`);
+    }
+     catch (error) {
       console.error("planificador de recordatorios:", error);
     } finally {
       vueltaEnCurso = false;
