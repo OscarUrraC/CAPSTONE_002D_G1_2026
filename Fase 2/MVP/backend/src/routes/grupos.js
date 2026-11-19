@@ -245,7 +245,7 @@ gruposRouter.delete("/:id/membresia", requireAuth, requireCuentaActiva, async (r
     const idPerfil = req.usuario.id_perfil;
     const { grupo, membresia, rol } = await obtenerContextoGrupo(req.params.id, idPerfil);
 
-    if (rol === "moderador") {
+    if (rol === "moderador") { //REGLA DE NEGOCIO: el moderador no puede salir de su propio grupo. Debe eliminar el grupo.
       throw errorConStatus("El moderador no puede salir de su propio grupo", 400);
     }
     if (!membresia) throw errorConStatus("No perteneces a este grupo", 404);
@@ -369,7 +369,7 @@ gruposRouter.delete("/:id/miembros/:idPerfil", requireAuth, requireCuentaActiva,
 gruposRouter.patch("/:id/miembros/:idPerfil/rango", requireAuth, requireCuentaActiva, async (req, res) => {
   try {
     const { grupo, rol } = await obtenerContextoGrupo(req.params.id, req.usuario.id_perfil);
-    if (rol !== "moderador") {
+    if (rol !== "moderador") { //REGLA DE NEGOCIO: solo el moderador puede dar o quitar el rango de colaborador. Un colaborador no puede dar rango a otro miembro ni quitarle el rango a un colaborador.
       throw errorConStatus("Solo el moderador puede otorgar o quitar rangos", 403);
     }
 

@@ -52,7 +52,7 @@ function validarFecha(valor) {
 function validarRegistro(body = {}) {
   const correo = typeof body.correo === "string" ? body.correo.trim().toLowerCase() : "";
   if (!CORREO_INSTITUCIONAL.test(correo)) {
-    throw crearError(400, "Debes usar tu correo institucional @duocuc.cl");
+    throw crearError(400, "Debes usar tu correo institucional @duocuc.cl"); //REGLA DE NEGOCIO: solo correos institucionales. No se valida la propiedad del correo, solo el dominio.
   }
 
   const { password } = body;

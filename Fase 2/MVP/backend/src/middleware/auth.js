@@ -72,9 +72,8 @@ export function requireRol(...roles) {
 
 // Bloquea las acciones de escritura a cuentas con sanción vigente.
 // Debe ir DESPUÉS de requireAuth (usa lo que este ya consultó, sin otra consulta a la BD).
-export function requireCuentaActiva(req, res, next) {
-  if (!req.estadoCuenta) {
-    // Falla cerrado: si alguien la usa sin requireAuth, no deja pasar.
+export function requireCuentaActiva(req, res, next) { 
+  if (!req.estadoCuenta) { 
     return res.status(500).json({ error: "Error interno del servidor" });
   }
 
@@ -83,7 +82,7 @@ export function requireCuentaActiva(req, res, next) {
   // Sin fecha de término, la sanción se trata como indefinida.
   const sancionVigente = estado === "sancionada" && (!hasta || new Date(hasta) > new Date());
 
-  if (sancionVigente) {
+  if (sancionVigente) {//REGLA DE NEGOCIO: La cuenta debe estar activa para poder realizar acciones de escritura. Si la cuenta está sancionada, no podrá realizar dichas acciones.
     const cuando = hasta ? ` hasta el ${new Date(hasta).toLocaleDateString("es-CL")}` : "";
     return res.status(403).json({ error: `Tu cuenta tiene una sanción vigente${cuando}` });
   }
